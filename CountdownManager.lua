@@ -93,7 +93,6 @@ function CountdownManager.cleanupTableState(tableId)
         end
 
         countdownStates[tableId] = nil
-        print("CountdownManager: 已清理桌子 " .. tableId .. " 的倒计时状态")
     end
 end
 
@@ -157,7 +156,6 @@ function CountdownManager.startCountdown(tableId, countdownType, duration, playe
         state.onWarningCallback = options.onWarning
     end
 
-    print("CountdownManager: 启动倒计时 - 桌子: " .. tableId .. ", 类型: " .. countdownType .. ", 时长: " .. duration .. "秒")
 
     -- 启动倒计时更新循环
     state.updateConnection = RunService.Heartbeat:Connect(function()
@@ -182,7 +180,6 @@ function CountdownManager.stopCountdown(tableId)
         return
     end
 
-    print("CountdownManager: 停止倒计时 - 桌子: " .. tableId)
 
     -- 断开更新连接
     if state.updateConnection then
@@ -216,7 +213,6 @@ function CountdownManager.updateCountdown(tableId)
         if state.onWarningCallback then
             state.onWarningCallback(tableId, state.remainingTime)
         end
-        print("CountdownManager: 进入警告阶段 - 桌子: " .. tableId .. ", 剩余时间: " .. string.format("%.1f", state.remainingTime))
     end
 
     -- 发送更新给客户端
@@ -229,7 +225,6 @@ function CountdownManager.updateCountdown(tableId)
 
     -- 检查是否倒计时结束
     if state.remainingTime <= 0 then
-        print("CountdownManager: 倒计时结束 - 桌子: " .. tableId)
 
         -- 保存回调函数（因为stopCountdown会清理状态）
         local timeoutCallback = state.onTimeoutCallback
@@ -251,10 +246,9 @@ function CountdownManager.sendCountdownUpdate(tableId)
         return
     end
 
-    -- 计算时间显示格式 XX:YY (秒:毫秒)
+    -- 计算时间显示格式 XX (秒)
     local seconds = math.floor(state.remainingTime)
-    local milliseconds = math.floor((state.remainingTime - seconds) * 100)
-    local timeString = string.format("%02d:%02d", seconds, milliseconds)
+    local timeString = string.format("%02d", seconds)
 
     -- 计算进度条比例 (1.0 = 开始, 0.0 = 结束)
     local progressRatio = state.remainingTime / state.duration
@@ -312,7 +306,6 @@ function CountdownManager.fireCountdownEvent(player, action, data)
         countdownEvent = Instance.new("RemoteEvent")
         countdownEvent.Name = "CountdownEvent"
         countdownEvent.Parent = remoteEventsFolder
-        print("CountdownManager: 创建了CountdownEvent RemoteEvent")
     end
 
     -- 发送给客户端
@@ -372,7 +365,6 @@ function CountdownManager.switchCurrentPlayer(tableId, newPlayer)
     end
 
     state.currentPlayer = newPlayer
-    print("CountdownManager: 切换当前玩家 - 桌子: " .. tableId .. ", 玩家: " .. (newPlayer and newPlayer.Name or "无"))
 
     -- 立即发送更新
     CountdownManager.sendCountdownUpdate(tableId)
@@ -398,7 +390,6 @@ function CountdownManager.resetCountdown(tableId, newDuration)
     state.startTime = tick()
     state.isWarningPhase = false
 
-    print("CountdownManager: 重置倒计时 - 桌子: " .. tableId .. ", 新时长: " .. state.duration .. "秒")
 
     -- 立即发送更新
     CountdownManager.sendCountdownUpdate(tableId)
@@ -416,7 +407,6 @@ end
 
 -- 初始化
 function CountdownManager.initialize()
-    print("CountdownManager: 倒计时管理器已初始化")
 
     -- 立即创建CountdownEvent RemoteEvent
     local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -424,7 +414,6 @@ function CountdownManager.initialize()
         remoteEventsFolder = Instance.new("Folder")
         remoteEventsFolder.Name = "RemoteEvents"
         remoteEventsFolder.Parent = ReplicatedStorage
-        print("CountdownManager: 创建了RemoteEvents文件夹")
     end
 
     local countdownEvent = remoteEventsFolder:FindFirstChild("CountdownEvent")
@@ -432,7 +421,6 @@ function CountdownManager.initialize()
         countdownEvent = Instance.new("RemoteEvent")
         countdownEvent.Name = "CountdownEvent"
         countdownEvent.Parent = remoteEventsFolder
-        print("CountdownManager: 创建了CountdownEvent RemoteEvent")
     end
 
     -- 监听玩家离开事件，清理相关状态
@@ -442,7 +430,6 @@ function CountdownManager.initialize()
             for i = #state.players, 1, -1 do
                 if state.players[i] == player then
                     table.remove(state.players, i)
-                    print("CountdownManager: 移除离线玩家 " .. player.Name .. " 从桌子 " .. tableId)
                 end
             end
 

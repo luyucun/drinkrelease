@@ -464,6 +464,23 @@ end
 -- V1.4: 开始毒药注入视觉效果
 function PoisonSelectionManager.startPoisonInjectionEffect(player, drinkIndex, tableId)
 
+	-- 获取该桌子的状态
+	local poisonState = getPoisonState(tableId)
+	if not poisonState then
+		warn("无法获取桌子 " .. (tableId or "未知") .. " 的毒药状态")
+		return
+	end
+
+	-- 立即标记玩家完成选择
+	poisonState.playerConfirmations[player] = false
+	poisonState.completedPlayers[player] = true
+
+	-- 隐藏确认弹框
+	poisonSelectionEvent:FireClient(player, "hideConfirmation")
+
+	-- 立即检查并显示等待状态
+	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
+
 	-- 通知客户端开始视觉效果（只对注入毒药的玩家显示）
 	poisonSelectionEvent:FireClient(player, "startPoisonEffect", {
 		drinkIndex = drinkIndex
@@ -515,20 +532,6 @@ function PoisonSelectionManager.completePoisonInjection(player, drinkIndex, tabl
 	poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
 		poisonedDrinks = poisonState.playerPoisonList[player]
 	})
-
-	-- 记录最终选择 - 先标记完成，再处理UI
-	poisonState.playerConfirmations[player] = false
-	poisonState.completedPlayers[player] = true
-
-	-- 隐藏确认弹框
-	poisonSelectionEvent:FireClient(player, "hideConfirmation")
-
-	-- V1.4: 如果玩家完成选择但对手还没完成，显示等待状态
-	local otherPlayer = (player == poisonState.player1) and poisonState.player2 or poisonState.player1
-	if otherPlayer and not poisonState.completedPlayers[otherPlayer] then
-		-- 显示"Waiting for opponent"
-		poisonSelectionEvent:FireClient(player, "showWaitingForOpponent")
-	end
 
 	-- 检查是否所有玩家都完成选择
 	PoisonSelectionManager.checkAllPlayersCompleted(tableId)
@@ -724,23 +727,40 @@ function PoisonSelectionManager.showSinglePoisonEffect(player, drinkIndex, poiso
 	})
 end
 
+-- V1.4: 统一的等待对手检查函数
+function PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
+	local poisonState = getPoisonState(tableId)
+	if not poisonState then
+		return
+	end
+
+	-- 检查对手是否完成选择
+	local otherPlayer = (player == poisonState.player1) and poisonState.player2 or poisonState.player1
+	if otherPlayer and not poisonState.completedPlayers[otherPlayer] then
+		-- 显示"Waiting for opponent"
+		poisonSelectionEvent:FireClient(player, "showWaitingForOpponent")
+	end
+end
+
 -- V1.7: 完成购买选择流程
 function PoisonSelectionManager.completePurchaseSelection(player, tableId)
+	-- 获取该桌子的状态
+	local poisonState = getPoisonState(tableId)
+	if not poisonState then
+		warn("无法获取桌子 " .. (tableId or "未知") .. " 的毒药状态")
+		return
+	end
+
+	-- 记录最终选择
+	poisonState.playerConfirmations[player] = true
+	poisonState.completedPlayers[player] = true
+
+	-- 立即检查并显示等待状态
+	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
 
 	-- 等待2秒让视觉效果播放完成
 	spawn(function()
 		wait(2)
-
-		-- 获取该桌子的状态
-		local poisonState = getPoisonState(tableId)
-		if not poisonState then
-			warn("无法获取桌子 " .. (tableId or "未知") .. " 的毒药状态")
-			return
-		end
-
-		-- 记录最终选择
-		poisonState.playerConfirmations[player] = true
-		poisonState.completedPlayers[player] = true
 
 		-- 隐藏所有相关UI
 		poisonSelectionEvent:FireClient(player, "hideAll")
@@ -791,6 +811,9 @@ function PoisonSelectionManager.continueNormalFlow(player, drinkIndex, tableId)
 	-- 记录最终选择
 	poisonState.playerConfirmations[player] = true
 	poisonState.completedPlayers[player] = true
+
+	-- 立即检查并显示等待状态
+	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
 
 	-- 隐藏确认弹框和选择UI
 	poisonSelectionEvent:FireClient(player, "hideAll")

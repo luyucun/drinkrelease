@@ -194,7 +194,7 @@ V1.4 新增操作倒计时功能：
     2）我们现在需要修改为：给玩家单独显示StarterGui - ConfirmTips的内容，但是我们在ConfirmTips下除了原来的Tips，还新增了ProgressBg这个frame和Time这个textlabel
     3）ProgressBg是用来当倒计时进度条的背景的，ProgressBar是ProgressBg的子节点，用于长度变化来表现出倒计时条效果的，在倒计时过程中，ProgressBar的长度默认是0（注意这里是scale），随着倒计时进行，ProgressBar的长度逐渐变长，当倒计时结束时ProgressBar的长度正好变为1
     4）StarterGui - ConfirmTips - Time是用于显示倒计时的，实时限时倒计时的秒数，格式为XX:YY,XX是秒，YY是毫秒。当倒计时进入5秒后，需要把StarterGui - ConfirmTips - Time的字体颜色改成红色
-    5）在这个阶段，如果自己已经完成了毒药注入，则需要把StarterGui - ConfirmTips - Tips的文本内容改为：Waiting for opponent
+    5）在这个阶段，如果自己已经完成了毒药注入，则需要把StarterGui - ConfirmTips - Tips的文本内容改为：Waiting for opponent，同时隐藏progressBg和Time，只显示Tips
 4.在这个阶段，如果倒计时结束之前双方都完成了毒药注入，则立刻进入下一阶段
 
 阶段4的倒计时逻辑：

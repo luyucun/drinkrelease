@@ -5,5 +5,3 @@
 
 -- 加载CountdownManager
 local CountdownManager = require(script.Parent.CountdownManager)
-
-print("CountdownManagerEntry: CountdownManager已通过入口脚本加载")

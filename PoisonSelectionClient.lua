@@ -102,6 +102,17 @@ function PoisonSelectionClient.showWaitingForOpponent()
 		if tips then
 			TypewriterEffect.play(tips, "Waiting for opponent")
 		end
+
+		-- V1.4: 按照策划案要求隐藏progressBg和Time，只显示Tips
+		local progressBg = confirmTips:FindFirstChild("ProgressBg")
+		if progressBg then
+			progressBg.Visible = false
+		end
+
+		local time = confirmTips:FindFirstChild("Time")
+		if time then
+			time.Visible = false
+		end
 	end
 end
 

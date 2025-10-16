@@ -119,7 +119,6 @@ function CountdownClient.startCountdown(data)
         return
     end
 
-    print("CountdownClient: 启动倒计时显示 - 类型: " .. countdownType)
 
     -- 停止当前倒计时（如果有）
     CountdownClient.stopCountdown()
@@ -145,10 +144,9 @@ function CountdownClient.startCountdown(data)
     uiElements.progressBar.Size = UDim2.new(0, 0, 1, 0) -- 开始时长度为0
 
     -- 初始化时间显示
-    uiElements.timeLabel.Text = "15:00"
+    uiElements.timeLabel.Text = "15"
     uiElements.timeLabel.TextColor3 = Color3.new(1, 1, 1) -- 默认白色
 
-    print("CountdownClient: 倒计时UI已初始化")
 end
 
 -- 更新倒计时显示
@@ -162,7 +160,7 @@ function CountdownClient.updateCountdown(data)
         return
     end
 
-    local timeString = data.timeString or "00:00"
+    local timeString = data.timeString or "00"
     local progressRatio = data.progressRatio or 0
     local isWarningPhase = data.isWarningPhase or false
 
@@ -204,7 +202,6 @@ function CountdownClient.stopCountdown(data)
         return
     end
 
-    print("CountdownClient: 停止倒计时显示")
 
     -- 停止动画
     if countdownState.progressTween then
@@ -232,7 +229,6 @@ end
 
 -- 处理倒计时完成
 function CountdownClient.onCountdownComplete(data)
-    print("CountdownClient: 倒计时完成")
 
     -- 自动停止显示
     CountdownClient.stopCountdown(data)
@@ -257,7 +253,6 @@ function CountdownClient.setupRemoteEvents()
                     CountdownClient.onCountdownComplete(data)
                 end
             end)
-            print("CountdownClient: 成功连接到CountdownEvent")
             return true
         end
         return false
@@ -280,7 +275,6 @@ end
 -- 初始化
 function CountdownClient.initialize()
     CountdownClient.setupRemoteEvents()
-    print("CountdownClient: 倒计时客户端已初始化")
 end
 
 -- 启动客户端控制器
