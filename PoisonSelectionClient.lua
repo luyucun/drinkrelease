@@ -92,6 +92,19 @@ function PoisonSelectionClient.showConfirmation(drinkIndex)
 	end
 end
 
+-- V1.4: 显示等待对手状态
+function PoisonSelectionClient.showWaitingForOpponent()
+	local confirmUI = getConfirmUI()
+	local confirmTips = confirmUI:FindFirstChild("ConfirmTips")
+
+	if confirmTips then
+		local tips = confirmTips:FindFirstChild("Tips")
+		if tips then
+			TypewriterEffect.play(tips, "Waiting for opponent")
+		end
+	end
+end
+
 -- 隐藏确认弹框
 function PoisonSelectionClient.hideConfirmation()
 	local confirmUI = getConfirmUI()
@@ -309,6 +322,8 @@ function PoisonSelectionClient.setupRemoteEvents()
 			PoisonSelectionClient.handleGameOver(data)
 		elseif action == "victory" then
 			PoisonSelectionClient.handleVictory(data)
+		elseif action == "showWaitingForOpponent" then
+			PoisonSelectionClient.showWaitingForOpponent()
 		end
 	end)
 

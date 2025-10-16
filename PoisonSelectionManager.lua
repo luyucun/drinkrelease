@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- 引入其他管理器（避免循环依赖，延迟加载）
 local DrinkManager = nil
 local DrinkSelectionManager = nil
+local CountdownManager = nil
 
 -- 延迟加载的 RemoteEvents
 local remoteEventsFolder = nil
@@ -129,6 +130,188 @@ function PoisonSelectionManager.cleanupTableState(tableId)
 end
 -- ========== 多桌状态隔离核心重构结束 ==========
 
+-- ========== V1.4 倒计时功能 ==========
+-- 启动毒药阶段倒计时
+function PoisonSelectionManager.startPoisonPhaseCountdown(tableId, player1, player2)
+	-- 延迟加载CountdownManager
+	if not CountdownManager then
+		CountdownManager = _G.CountdownManager
+		if not CountdownManager then
+			warn("PoisonSelectionManager: CountdownManager未加载")
+			return false
+		end
+	end
+
+	local config = CountdownManager.getConfig()
+	local countdownTypes = CountdownManager.getCountdownTypes()
+
+	-- 设置倒计时选项
+	local options = {
+		onTimeout = function(tableId)
+			PoisonSelectionManager.onPoisonPhaseTimeout(tableId)
+		end,
+		onUpdate = function(tableId, remainingTime)
+			PoisonSelectionManager.onPoisonPhaseUpdate(tableId, remainingTime)
+		end,
+		onWarning = function(tableId, remainingTime)
+			PoisonSelectionManager.onPoisonPhaseWarning(tableId, remainingTime)
+		end,
+		customData = {
+			phase = "poison_selection",
+			uiPath = "ConfirmTips"
+		}
+	}
+
+	-- 启动倒计时
+	local success = CountdownManager.startCountdown(
+		tableId,
+		countdownTypes.POISON_PHASE,
+		config.POISON_PHASE_DURATION,
+		{player1, player2},
+		options
+	)
+
+	if not success then
+		warn("PoisonSelectionManager: 启动毒药阶段倒计时失败")
+		return false
+	end
+
+	print("PoisonSelectionManager: 毒药阶段倒计时已启动 - 桌子: " .. tableId)
+	return true
+end
+
+-- 毒药阶段倒计时超时处理
+function PoisonSelectionManager.onPoisonPhaseTimeout(tableId)
+	print("PoisonSelectionManager: 毒药阶段倒计时超时 - 桌子: " .. tableId)
+
+	local poisonState = getPoisonState(tableId)
+	if not poisonState or not poisonState.activePhase then
+		return
+	end
+
+	-- 为未完成选择的玩家自动选择
+	local playersToAutoSelect = {}
+
+	if not poisonState.completedPlayers[poisonState.player1] then
+		table.insert(playersToAutoSelect, poisonState.player1)
+	end
+
+	if not poisonState.completedPlayers[poisonState.player2] then
+		table.insert(playersToAutoSelect, poisonState.player2)
+	end
+
+	-- 先隐藏所有玩家的选择UI
+	PoisonSelectionManager.hideSelectionUI(poisonState.player1)
+	PoisonSelectionManager.hideSelectionUI(poisonState.player2)
+
+	-- 执行自动选择
+	for _, player in ipairs(playersToAutoSelect) do
+		PoisonSelectionManager.autoSelectForPlayer(tableId, player)
+	end
+end
+
+-- 为玩家自动选择毒药
+function PoisonSelectionManager.autoSelectForPlayer(tableId, player)
+	print("PoisonSelectionManager: 自动选择毒药 - 玩家: " .. player.Name .. ", 桌子: " .. tableId)
+
+	-- 获取该桌子的状态
+	local poisonState = getPoisonState(tableId)
+	if not poisonState then
+		warn("无法获取桌子 " .. tableId .. " 的毒药状态")
+		return
+	end
+
+	-- 🔧 修复：改进随机选择算法，确保不同玩家选择不同的奶茶
+	local usedIndexes = {}
+
+	-- 收集已经被选择的奶茶索引
+	for otherPlayer, selectedIndex in pairs(poisonState.playerSelections) do
+		if otherPlayer ~= player and selectedIndex then
+			usedIndexes[selectedIndex] = true
+		end
+	end
+
+	-- 创建可选择的奶茶列表（排除已被选择的）
+	local availableIndexes = {}
+	for i = 1, 24 do
+		if not usedIndexes[i] then
+			table.insert(availableIndexes, i)
+		end
+	end
+
+	-- 如果没有可选择的（理论上不应该发生），则使用全部范围
+	if #availableIndexes == 0 then
+		for i = 1, 24 do
+			table.insert(availableIndexes, i)
+		end
+		warn("PoisonSelectionManager: 所有奶茶都被选择，使用全部范围")
+	end
+
+	-- 添加玩家特定的随机种子偏移，确保不同玩家有不同的随机结果
+	-- 🔧 修复：将tableId转换为数字进行计算
+	local tableIdNumber = tonumber(tableId) or 0
+	local playerSeed = player.UserId + tick() * 1000 + tableIdNumber
+	math.randomseed(playerSeed)
+
+	-- 从可选择的列表中随机选择一个
+	local randomChoice = math.random(1, #availableIndexes)
+	local randomDrinkIndex = availableIndexes[randomChoice]
+
+	-- 记录玩家选择
+	poisonState.playerSelections[player] = randomDrinkIndex
+
+	-- 直接执行"No"选择的流程（不购买道具，直接注入毒药）
+	PoisonSelectionManager.startPoisonInjectionEffect(player, randomDrinkIndex, tableId)
+
+	print("PoisonSelectionManager: 已为玩家 " .. player.Name .. " 自动选择奶茶 " .. randomDrinkIndex .. " (可选: " .. #availableIndexes .. "个)")
+end
+
+-- 毒药阶段倒计时更新
+function PoisonSelectionManager.onPoisonPhaseUpdate(tableId, remainingTime)
+	-- 可以在这里添加实时更新逻辑
+	-- 目前由CountdownManager自动发送给客户端
+end
+
+-- 毒药阶段进入警告阶段
+function PoisonSelectionManager.onPoisonPhaseWarning(tableId, remainingTime)
+	print("PoisonSelectionManager: 毒药阶段进入警告阶段 - 桌子: " .. tableId .. ", 剩余: " .. string.format("%.1f", remainingTime) .. "秒")
+	-- 警告阶段的处理（如字体变红）由客户端CountdownClient处理
+end
+
+-- 停止毒药阶段倒计时
+function PoisonSelectionManager.stopPoisonPhaseCountdown(tableId)
+	if CountdownManager and CountdownManager.stopCountdown then
+		CountdownManager.stopCountdown(tableId)
+		print("PoisonSelectionManager: 毒药阶段倒计时已停止 - 桌子: " .. tableId)
+	end
+end
+
+-- 检查是否应该提前结束倒计时
+function PoisonSelectionManager.checkEarlyFinish(tableId)
+	local poisonState = getPoisonState(tableId)
+	if not poisonState then
+		return false
+	end
+
+	-- 检查是否双方都完成了选择
+	local completedCount = 0
+	if poisonState.completedPlayers[poisonState.player1] then
+		completedCount = completedCount + 1
+	end
+	if poisonState.completedPlayers[poisonState.player2] then
+		completedCount = completedCount + 1
+	end
+
+	if completedCount >= 2 then
+		-- 双方都完成，停止倒计时并进入下一阶段
+		PoisonSelectionManager.stopPoisonPhaseCountdown(tableId)
+		return true
+	end
+
+	return false
+end
+-- ========== V1.4 倒计时功能结束 ==========
+
 -- 开始毒药选择阶段
 function PoisonSelectionManager.startPoisonPhase(player1, player2)
 	if not ensureInitialized() then
@@ -165,6 +348,9 @@ function PoisonSelectionManager.startPoisonPhase(player1, player2)
 	if _G.PropEffectHandler and _G.PropEffectHandler.resetTableState then
 		_G.PropEffectHandler.resetTableState(tableId)
 	end
+
+	-- V1.4: 启动毒药阶段倒计时
+	PoisonSelectionManager.startPoisonPhaseCountdown(tableId, player1, player2)
 
 	-- 为两个玩家显示选择UI(只发给这两个玩家)
 	PoisonSelectionManager.showSelectionUI(player1)
@@ -336,6 +522,13 @@ function PoisonSelectionManager.completePoisonInjection(player, drinkIndex, tabl
 
 	-- 隐藏确认弹框
 	poisonSelectionEvent:FireClient(player, "hideConfirmation")
+
+	-- V1.4: 如果玩家完成选择但对手还没完成，显示等待状态
+	local otherPlayer = (player == poisonState.player1) and poisonState.player2 or poisonState.player1
+	if otherPlayer and not poisonState.completedPlayers[otherPlayer] then
+		-- 显示"Waiting for opponent"
+		poisonSelectionEvent:FireClient(player, "showWaitingForOpponent")
+	end
 
 	-- 检查是否所有玩家都完成选择
 	PoisonSelectionManager.checkAllPlayersCompleted(tableId)
@@ -628,8 +821,11 @@ function PoisonSelectionManager.checkAllPlayersCompleted(tableId)
 		completedCount = completedCount + 1
 	end
 
-
+	-- V1.4: 检查是否提前结束倒计时
 	if completedCount >= 2 then
+		-- 双方都完成，停止倒计时
+		PoisonSelectionManager.stopPoisonPhaseCountdown(tableId)
+		-- 立即进入下一阶段
 		PoisonSelectionManager.finishPoisonPhase(tableId)
 	end
 end
@@ -734,6 +930,8 @@ function PoisonSelectionManager.endPoisonPhaseByPlayerLeave(winner, leavingPlaye
 		return
 	end
 
+	-- V1.4: 停止倒计时
+	PoisonSelectionManager.stopPoisonPhaseCountdown(tableId)
 
 	-- 先缓存当前玩家引用
 	local player1 = poisonState.player1

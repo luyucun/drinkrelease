@@ -17,6 +17,7 @@ local seatLockEvent = remoteEventsFolder:WaitForChild("SeatLock")
 
 -- 引入其他管理器
 local DrinkManager = require(script.Parent.DrinkManager)
+local CountdownManager = nil
 
 -- CoinManager是Script类型，不能直接require，需要等待其加载
 local CoinManager = nil
@@ -110,6 +111,137 @@ local function getTableIdFromCurrentPlayers()
 	return nil
 end
 -- ========== 多桌状态隔离核心重构结束 ==========
+
+-- ========== V1.4 倒计时功能 ==========
+-- 启动选择阶段回合倒计时
+function DrinkSelectionManager.startSelectionTurnCountdown(tableId, currentPlayer)
+	-- 延迟加载CountdownManager
+	if not CountdownManager then
+		CountdownManager = _G.CountdownManager
+		if not CountdownManager then
+			warn("DrinkSelectionManager: CountdownManager未加载")
+			return false
+		end
+	end
+
+	local selectionState = getSelectionState(tableId)
+	if not selectionState or not selectionState.activePhase then
+		warn("DrinkSelectionManager: 选择阶段未激活")
+		return false
+	end
+
+	local config = CountdownManager.getConfig()
+	local countdownTypes = CountdownManager.getCountdownTypes()
+
+	-- 设置倒计时选项
+	local options = {
+		currentPlayer = currentPlayer,
+		onTimeout = function(tableId)
+			DrinkSelectionManager.onSelectionTurnTimeout(tableId)
+		end,
+		onUpdate = function(tableId, remainingTime)
+			DrinkSelectionManager.onSelectionTurnUpdate(tableId, remainingTime)
+		end,
+		onWarning = function(tableId, remainingTime)
+			DrinkSelectionManager.onSelectionTurnWarning(tableId, remainingTime)
+		end,
+		customData = {
+			phase = "drink_selection",
+			uiPath = "SelectTips"
+		}
+	}
+
+	-- 启动倒计时
+	local success = CountdownManager.startCountdown(
+		tableId,
+		countdownTypes.SELECTION_PHASE,
+		config.SELECTION_PHASE_DURATION,
+		selectionState.players or {selectionState.player1, selectionState.player2},
+		options
+	)
+
+	if not success then
+		warn("DrinkSelectionManager: 启动选择回合倒计时失败")
+		return false
+	end
+
+	print("DrinkSelectionManager: 选择回合倒计时已启动 - 桌子: " .. tableId .. ", 当前玩家: " .. currentPlayer.Name)
+	return true
+end
+
+-- 选择阶段回合倒计时超时处理
+function DrinkSelectionManager.onSelectionTurnTimeout(tableId)
+	print("DrinkSelectionManager: 选择回合倒计时超时 - 桌子: " .. tableId)
+
+	local selectionState = getSelectionState(tableId)
+	if not selectionState or not selectionState.activePhase then
+		return
+	end
+
+	local currentPlayer = selectionState.currentPlayer
+	if not currentPlayer then
+		warn("DrinkSelectionManager: 当前玩家为空，无法执行自动选择")
+		return
+	end
+
+	-- 为当前玩家自动选择奶茶
+	DrinkSelectionManager.autoSelectDrinkForPlayer(tableId, currentPlayer)
+end
+
+-- 为玩家自动选择奶茶
+function DrinkSelectionManager.autoSelectDrinkForPlayer(tableId, player)
+	print("DrinkSelectionManager: 自动选择奶茶 - 玩家: " .. player.Name .. ", 桌子: " .. tableId)
+
+	local selectionState = getSelectionState(tableId)
+	if not selectionState or #selectionState.availableDrinks == 0 then
+		warn("DrinkSelectionManager: 没有可用的奶茶进行自动选择")
+		return
+	end
+
+	-- 随机选择一个可用的奶茶
+	local randomIndex = math.random(1, #selectionState.availableDrinks)
+	local selectedDrinkIndex = selectionState.availableDrinks[randomIndex]
+
+	print("DrinkSelectionManager: 已为玩家 " .. player.Name .. " 自动选择奶茶 " .. selectedDrinkIndex)
+
+	-- 执行选择逻辑
+	DrinkSelectionManager.onPlayerSelectDrink(player, selectedDrinkIndex)
+end
+
+-- 选择阶段回合倒计时更新
+function DrinkSelectionManager.onSelectionTurnUpdate(tableId, remainingTime)
+	-- 可以在这里添加实时更新逻辑
+	-- 目前由CountdownManager自动发送给客户端
+end
+
+-- 选择阶段进入警告阶段
+function DrinkSelectionManager.onSelectionTurnWarning(tableId, remainingTime)
+	print("DrinkSelectionManager: 选择回合进入警告阶段 - 桌子: " .. tableId .. ", 剩余: " .. string.format("%.1f", remainingTime) .. "秒")
+	-- 警告阶段的处理（如字体变红）由客户端CountdownClient处理
+end
+
+-- 停止选择阶段倒计时
+function DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
+	if CountdownManager and CountdownManager.stopCountdown then
+		CountdownManager.stopCountdown(tableId)
+		print("DrinkSelectionManager: 选择回合倒计时已停止 - 桌子: " .. tableId)
+	end
+end
+
+-- 切换到下一个玩家的倒计时
+function DrinkSelectionManager.switchPlayerCountdown(tableId, newCurrentPlayer)
+	-- 停止当前倒计时
+	DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
+
+	-- 更新CountdownManager中的当前玩家
+	if CountdownManager and CountdownManager.switchCurrentPlayer then
+		CountdownManager.switchCurrentPlayer(tableId, newCurrentPlayer)
+	end
+
+	-- 重新启动倒计时
+	DrinkSelectionManager.startSelectionTurnCountdown(tableId, newCurrentPlayer)
+end
+-- ========== V1.4 倒计时功能结束 ==========
 
 -- 开始选择阶段
 function DrinkSelectionManager.startSelectionPhase(player1, player2)
@@ -366,6 +498,9 @@ function DrinkSelectionManager.startPlayerTurn(tableId)
 	if selectionState.waitingPlayer and selectionState.waitingPlayer.Parent then
 		cameraControlEvent:FireClient(selectionState.waitingPlayer, "enterSelect")
 	end
+
+	-- V1.4: 启动当前玩家的倒计时
+	DrinkSelectionManager.startSelectionTurnCountdown(tableId, selectionState.currentPlayer)
 end
 
 -- 显示SelectTips UI
@@ -877,6 +1012,9 @@ function DrinkSelectionManager.switchToNextPlayer(tableId)
 	-- 🔒 清除处理标志，允许新一轮的选择
 	selectionState.isProcessingSelection = false
 
+	-- V1.4: 切换倒计时到新的当前玩家
+	DrinkSelectionManager.switchPlayerCountdown(tableId, selectionState.currentPlayer)
+
 	-- 开始下一轮(传递tableId)
 	DrinkSelectionManager.startPlayerTurn(tableId)
 end
@@ -899,6 +1037,8 @@ function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 		return
 	end
 
+	-- V1.4: 停止选择阶段倒计时
+	DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
 
 	selectionState.activePhase = false
 	selectionState.gameResult = {
@@ -1740,6 +1880,8 @@ function DrinkSelectionManager.endSelectionPhaseByPlayerLeave(winner, leavingPla
 		return
 	end
 
+	-- V1.4: 停止选择阶段倒计时
+	DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
 
 	-- 清理选择阶段状态
 	selectionState.activePhase = false

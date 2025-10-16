@@ -9,8 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SkinDataStore = DataStoreService:GetDataStore("PlayerSkinData_V1")
 
--- 🔧 关键修复：SkinConfig应该从ServerScriptService加载，而不是ReplicatedStorage
--- 因为SkinConfig.lua文件位于ServerScriptService中
+-- 🔧 关键修复：SkinConfig放在ReplicatedStorage中，直接从那里加载
 local SkinConfig = nil
 
 -- 安全加载SkinConfig，带错误处理
@@ -19,30 +18,30 @@ local function loadSkinConfig()
 		return SkinConfig
 	end
 
-	-- 尝试从同级目录加载（推荐方式）
+	-- 优先从ReplicatedStorage加载（因为SkinConfig位于ReplicatedStorage）
 	local success, result = pcall(function()
-		return require(script.Parent.SkinConfig)
-	end)
-
-	if success then
-		SkinConfig = result
-		print("✅ SkinConfig从ServerScriptService加载成功")
-		return SkinConfig
-	else
-		warn("❌ 从ServerScriptService加载SkinConfig失败: " .. tostring(result))
-	end
-
-	-- 备用方案：尝试从ReplicatedStorage加载
-	success, result = pcall(function()
 		return require(ReplicatedStorage:WaitForChild("SkinConfig", 5))
 	end)
 
 	if success then
 		SkinConfig = result
-		print("⚠️ SkinConfig从ReplicatedStorage加载成功（备用方案）")
+		print("✅ SkinConfig从ReplicatedStorage加载成功")
 		return SkinConfig
 	else
-		warn("❌ 从ReplicatedStorage加载SkinConfig也失败: " .. tostring(result))
+		warn("❌ 从ReplicatedStorage加载SkinConfig失败: " .. tostring(result))
+	end
+
+	-- 备用方案：尝试从ServerScriptService加载
+	success, result = pcall(function()
+		return require(script.Parent.SkinConfig)
+	end)
+
+	if success then
+		SkinConfig = result
+		print("⚠️ SkinConfig从ServerScriptService加载成功（备用方案）")
+		return SkinConfig
+	else
+		warn("❌ 从ServerScriptService加载SkinConfig也失败: " .. tostring(result))
 	end
 
 	-- 最后的备用方案：创建一个基本的SkinConfig替代品
