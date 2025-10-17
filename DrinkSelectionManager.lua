@@ -21,6 +21,7 @@ local seatLockEvent = remoteEventsFolder:WaitForChild("SeatLock")
 
 -- 引入其他管理器
 local DrinkManager = require(script.Parent.DrinkManager)
+local DrinkHandManager = nil  -- V1.5新增：手持道具管理器（延迟加载）
 local CountdownManager = nil
 
 -- CoinManager是Script类型，不能直接require，需要等待其加载
@@ -738,6 +739,196 @@ function DrinkSelectionManager.onPlayerSelectDrink(player, drinkIndex)
 	DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 end
 
+-- V1.5新增: 播放喝饮料动作并处理手持道具
+function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId)
+	if not player or not player.Character then
+		warn("playDrinkingAnimation: 玩家或其角色无效")
+		return false
+	end
+
+	if not tableId then
+		tableId = getTableIdFromPlayer(player)
+	end
+
+	if not tableId then
+		warn("playDrinkingAnimation: 无法获取桌子ID")
+		return false
+	end
+
+	-- 延迟加载DrinkHandManager
+	if not DrinkHandManager then
+		local success, module = pcall(function()
+			return require(script.Parent.DrinkHandManager)
+		end)
+		if success then
+			DrinkHandManager = module
+		else
+			warn("playDrinkingAnimation: 无法加载DrinkHandManager")
+			return false
+		end
+	end
+
+	local character = player.Character
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+
+	if not humanoid or not animator then
+		warn("playDrinkingAnimation: 玩家 " .. player.Name .. " 缺少Humanoid或Animator")
+		return false
+	end
+
+	-- 喝饮料动作ID (V1.5)
+	local DRINKING_ANIMATION_ID = "rbxassetid://135940354239870"
+	local DRINKING_ANIMATION_DURATION = 3.0  -- 动作长度（秒）
+
+	print(string.format("[DrinkSelectionManager] 🥤 开始播放玩家 %s 的喝饮料动作 (奶茶%d)", player.Name, drinkIndex))
+
+	-- 🔧 修复1：获取桌子上对应位置的奶茶模型，而不是玩家自己装备的皮肤
+	-- 根据drinkIndex确定应该复制哪个模型（奇数位置=玩家A的皮肤，偶数位置=玩家B的皮肤）
+	local drinkState = DrinkManager.getTableState(tableId)
+	local player1, player2 = DrinkManager.getPlayersFromTable(tableId)
+	local drinkModelOnTable = drinkState.activeDrinks[drinkIndex]
+
+	-- 如果桌子上还有模型，从桌子上的模型获取其模型名称来确定皮肤
+	local originalDrinkModel = nil
+	if drinkModelOnTable then
+		-- 从桌子上的模型获取源模型信息
+		originalDrinkModel = DrinkManager.getPlayerSkinModel(player1, tableId, drinkIndex)
+		if drinkIndex % 2 == 0 and player2 then
+			originalDrinkModel = DrinkManager.getPlayerSkinModel(player2, tableId, drinkIndex)
+		end
+	end
+
+	-- 备用方案：如果找不到桌子模型，才用玩家自己的皮肤
+	if not originalDrinkModel then
+		originalDrinkModel = DrinkManager.getPlayerSkinModel(player, tableId, drinkIndex)
+	end
+
+	if not originalDrinkModel then
+		warn("playDrinkingAnimation: 无法获取奶茶原始模型 (奶茶 " .. drinkIndex .. ")")
+		return false
+	end
+
+	print(string.format("[DrinkSelectionManager] ✅ 成功获取原始奶茶模型: %s", originalDrinkModel.Name))
+
+	-- 克隆奶茶模型用于手持
+	local handDrinkModel = DrinkManager.deepCloneModel(originalDrinkModel)
+	if not handDrinkModel then
+		warn("playDrinkingAnimation: 无法克隆奶茶模型")
+		return false
+	end
+
+	-- 🔧 关键修复：为克隆的模型设置Parent，否则attachDrinkToHand会检测到模型无效
+	handDrinkModel.Parent = workspace
+	print(string.format("[DrinkSelectionManager] ✅ 成功克隆奶茶模型用于手持"))
+
+	-- 🔧 修复：记录玩家是否在座位上，但不强制站立（保持坐着状态播放动画）
+	local wasSeated = false
+	local originalSeat = nil
+	if humanoid.Sit and humanoid.SeatPart then
+		wasSeated = true
+		originalSeat = humanoid.SeatPart  -- 记录原始座位
+		print(string.format("[DrinkSelectionManager] 📍 玩家 %s 保持坐着状态播放喝奶茶动画", player.Name))
+		-- 不再强制站立，让玩家在座位上播放动画
+	end
+
+	-- 2. 加载并播放动画
+	local success, animationTrack = pcall(function()
+		local animation = Instance.new("Animation")
+		animation.AnimationId = DRINKING_ANIMATION_ID
+
+		local track = animator:LoadAnimation(animation)
+		animation:Destroy()
+
+		track.Priority = Enum.AnimationPriority.Action4
+		track.Looped = false
+
+		return track
+	end)
+
+	if not success or not animationTrack then
+		warn("playDrinkingAnimation: 动画加载失败")
+		if handDrinkModel and handDrinkModel.Parent then
+			handDrinkModel:Destroy()
+		end
+		return false
+	end
+
+	print(string.format("[DrinkSelectionManager] ✅ 动画加载成功，开始播放"))
+
+	-- 3. 将奶茶附着到玩家手中
+	local attachSuccess = DrinkHandManager.attachDrinkToHand(player, handDrinkModel, drinkIndex, tableId)
+	if not attachSuccess then
+		warn("playDrinkingAnimation: 奶茶附着到手失败")
+		animationTrack:Destroy()
+		if handDrinkModel and handDrinkModel.Parent then
+			handDrinkModel:Destroy()
+		end
+		return false
+	end
+
+	print(string.format("[DrinkSelectionManager] 📍 奶茶已附着到 %s 的右手", player.Name))
+
+	-- 4. 播放动画
+	animationTrack:Play(0.1)  -- 淡入0.1秒
+
+	-- 5. 等待动画完成
+	task.delay(DRINKING_ANIMATION_DURATION, function()
+		if not player or not player.Parent then
+			print("[DrinkSelectionManager] ⚠️ 动画完成时玩家已离线")
+			return
+		end
+
+		-- 从手中移除奶茶
+		local removeSuccess = DrinkHandManager.removeDrinkFromHand(player)
+		if removeSuccess then
+			print(string.format("[DrinkSelectionManager] ✅ 已从 %s 手中移除奶茶", player.Name))
+		end
+
+		-- 销毁手持奶茶模型
+		if handDrinkModel and handDrinkModel.Parent then
+			pcall(function()
+				handDrinkModel:Destroy()
+			end)
+		end
+
+		-- 停止并销毁动画
+		pcall(function()
+			animationTrack:Stop(0.1)
+			animationTrack:Destroy()
+		end)
+
+		-- 🔧 修复：确保玩家继续坐在原始座位上，避免座位状态变化导致对局结束
+		if wasSeated and originalSeat and player and player.Parent and player.Character then
+			local finalHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
+			if finalHumanoid then
+				-- 检查玩家是否仍然坐在原始座位上
+				if finalHumanoid.SeatPart == originalSeat then
+					print(string.format("[DrinkSelectionManager] ✅ 玩家 %s 成功保持在原座位上", player.Name))
+				else
+					-- 如果由于某种原因离开了座位，尝试重新坐回原座位
+					if originalSeat and not originalSeat.Occupant then
+						-- 将玩家移动到座位附近
+						local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+						if rootPart then
+							rootPart.CFrame = originalSeat.CFrame + Vector3.new(0, 2, 0)
+							wait(0.1)
+							finalHumanoid.Sit = true
+							print(string.format("[DrinkSelectionManager] 🔄 已将玩家 %s 重新坐回原座位", player.Name))
+						end
+					else
+						print(string.format("[DrinkSelectionManager] ⚠️ 原座位已被占用，玩家 %s 保持当前状态", player.Name))
+					end
+				end
+			end
+		end
+
+		print(string.format("[DrinkSelectionManager] 🎬 玩家 %s 的喝饮料动作播放完成", player.Name))
+	end)
+
+	return true
+end
+
 -- 执行饮用流程
 function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 	if not tableId then
@@ -764,11 +955,21 @@ function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 		cameraControlEvent:FireClient(selectionState.player2, "focusOnDrinking", {targetPlayer = player.Name})
 	end
 
-	-- 移除奶茶模型（使用正确的桌子ID）
+	-- 先移除桌上的奶茶模型
 	DrinkManager.removeDrinkForTable(tableId, drinkIndex)
 
-	-- 等待饮用动画完成
-	wait(1)
+	-- V1.5新增: 播放喝饮料动作
+	-- 动作播放过程中会从DrinkModel文件夹直接获取模型，不依赖桌子状态
+	local animationSuccess = DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId)
+
+	if not animationSuccess then
+		warn("executeDrinking: 动作播放失败，继续使用原流程")
+		-- 回退：使用原始等待逻辑
+		wait(1)
+	else
+		-- 动作播放成功，等待其完成（3秒）
+		wait(3.5)
+	end
 
 	-- 检查是否中毒（使用正确的桌子ID）
 	local isPoisoned = DrinkManager.isDrinkPoisonedForTable(tableId, drinkIndex)
