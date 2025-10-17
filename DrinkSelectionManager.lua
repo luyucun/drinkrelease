@@ -8,6 +8,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+-- 🔧 修复：创建独立的随机数生成器，确保真正的随机性
+local FirstPlayerRandom = Random.new()
+local AutoSelectRandom = Random.new()
+
 -- 等待RemoteEvents
 local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
 local drinkSelectionEvent = remoteEventsFolder:WaitForChild("DrinkSelection")
@@ -198,8 +202,8 @@ function DrinkSelectionManager.autoSelectDrinkForPlayer(tableId, player)
 		return
 	end
 
-	-- 随机选择一个可用的奶茶
-	local randomIndex = math.random(1, #selectionState.availableDrinks)
+	-- 🔧 修复：使用独立的随机数生成器，确保真正的随机性
+	local randomIndex = AutoSelectRandom:NextInteger(1, #selectionState.availableDrinks)
 	local selectedDrinkIndex = selectionState.availableDrinks[randomIndex]
 
 	print("DrinkSelectionManager: 已为玩家 " .. player.Name .. " 自动选择奶茶 " .. selectedDrinkIndex)
@@ -345,7 +349,8 @@ function DrinkSelectionManager.randomizeFirstPlayer(tableId)
 	local selectionState = getSelectionState(tableId)
 	if not selectionState then return end
 
-	local randomChoice = math.random(1, 2)
+	-- 🔧 修复：使用独立的随机数生成器，确保真正的随机性
+	local randomChoice = FirstPlayerRandom:NextInteger(1, 2)
 
 	if randomChoice == 1 then
 		selectionState.currentPlayer = selectionState.player1
@@ -725,6 +730,8 @@ function DrinkSelectionManager.onPlayerSelectDrink(player, drinkIndex)
 
 	-- 隐藏当前玩家的选择提示
 	DrinkSelectionManager.hideSelectTips(selectionState.currentPlayer)
+	-- 🔧 修复：同时隐藏等待玩家的SelectTips，避免在饮用阶段显示倒计时UI
+	DrinkSelectionManager.hideSelectTips(selectionState.waitingPlayer)
 	-- 保持等待玩家的等待提示显示，让他们知道对方正在饮用
 
 	-- 执行饮用流程(传递tableId)

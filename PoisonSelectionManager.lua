@@ -9,6 +9,10 @@ local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- 🔧 修复：创建独立的随机数生成器，确保真正的随机性
+local PoisonRandom = Random.new()
+local ExtraPoisonRandom = Random.new()
+
 -- 引入其他管理器（避免循环依赖，延迟加载）
 local DrinkManager = nil
 local DrinkSelectionManager = nil
@@ -247,14 +251,8 @@ function PoisonSelectionManager.autoSelectForPlayer(tableId, player)
 		warn("PoisonSelectionManager: 所有奶茶都被选择，使用全部范围")
 	end
 
-	-- 添加玩家特定的随机种子偏移，确保不同玩家有不同的随机结果
-	-- 🔧 修复：将tableId转换为数字进行计算
-	local tableIdNumber = tonumber(tableId) or 0
-	local playerSeed = player.UserId + tick() * 1000 + tableIdNumber
-	math.randomseed(playerSeed)
-
-	-- 从可选择的列表中随机选择一个
-	local randomChoice = math.random(1, #availableIndexes)
+	-- 🔧 修复：使用独立的随机数生成器，确保真正的随机性
+	local randomChoice = PoisonRandom:NextInteger(1, #availableIndexes)
 	local randomDrinkIndex = availableIndexes[randomChoice]
 
 	-- 记录玩家选择
@@ -588,7 +586,8 @@ function PoisonSelectionManager.handleExtraPoisonPurchase(player, originalDrinkI
 
 	-- 随机选择一个额外的奶茶进行毒药注入
 	if #availableDrinks > 0 then
-		local randomIndex = math.random(1, #availableDrinks)
+		-- 🔧 修复：使用独立的随机数生成器
+		local randomIndex = ExtraPoisonRandom:NextInteger(1, #availableDrinks)
 		local randomDrinkIndex = availableDrinks[randomIndex]
 
 
