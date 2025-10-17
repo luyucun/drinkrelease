@@ -307,7 +307,17 @@ end
 -- 更新玩家数量显示
 function GameInstance:updatePlayerCount()
 	local count = self.gameState.playersReady
-	self.numLabel.Text = count .. "/2 Player"
+	self.numLabel.Text = count .. "/2"
+
+	-- 根据玩家数量改变字体颜色
+	-- 0/2: 白色，1/2: 红色，2/2: 绿色
+	if count == 0 then
+		self.numLabel.TextColor3 = Color3.fromRGB(255, 255, 255)  -- 白色
+	elseif count == 1 then
+		self.numLabel.TextColor3 = Color3.fromRGB(255, 0, 0)      -- 红色
+	elseif count == 2 then
+		self.numLabel.TextColor3 = Color3.fromRGB(0, 255, 0)      -- 绿色
+	end
 end
 
 -- 玩家坐下处理
