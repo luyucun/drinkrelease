@@ -99,7 +99,7 @@ function GameManager.startCountdown()
 	if gameState.isCountingDown then return end
 
 	gameState.isCountingDown = true
-	gameState.countdownTime = 5
+	gameState.countdownTime = 3
 
 
 	-- 启用Leave按钮UI

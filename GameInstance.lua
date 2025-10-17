@@ -590,7 +590,7 @@ function GameInstance:startCountdown()
 	if self.gameState.isCountingDown then return end
 
 	self.gameState.isCountingDown = true
-	self.gameState.countdownTime = 5
+	self.gameState.countdownTime = 3
 
 	-- 启用AirWall阻隔外部玩家干扰
 	self:enableAirWalls()
