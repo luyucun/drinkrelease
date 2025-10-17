@@ -330,8 +330,8 @@ function GameInstance:onPlayerSat(seat, player)
 		-- 立即启用Leave按钮
 		self:enableLeaveButton(player)
 
-		-- 切换到准备阶段镜头
-		self:sendCameraControl(player, "enterPrepare")
+		-- 🔧 修改：玩家单独坐下时不锁定镜头，保持镜头自由
+		-- 镜头锁定延迟到倒计时阶段进行
 
 		-- 补发菜单指令：确保玩家看到正确的菜单状态（只显示shop按钮）
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
@@ -348,8 +348,8 @@ function GameInstance:onPlayerSat(seat, player)
 		-- 立即启用Leave按钮
 		self:enableLeaveButton(player)
 
-		-- 切换到准备阶段镜头
-		self:sendCameraControl(player, "enterPrepare")
+		-- 🔧 修改：玩家单独坐下时不锁定镜头，保持镜头自由
+		-- 镜头锁定延迟到倒计时阶段进行
 
 		-- 补发菜单指令：确保玩家看到正确的菜单状态（只显示shop按钮）
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
@@ -394,6 +394,12 @@ function GameInstance:onPlayerLeft(seat, player)
 		self:disableLeaveButton(player)
 		self:sendCameraControl(player, "restore")
 
+		-- ✨ 新增：倒计时中有人离开时，为剩余玩家恢复镜头自由状态
+		if self.gameState.isCountingDown and self.gameState.player2 then
+			-- 剩余玩家的镜头恢复为自由状态（就像单人坐下时一样）
+			self:sendCameraControl(self.gameState.player2, "restore")
+		end
+
 		-- 离席时补发菜单指令：确保离席玩家立刻恢复到"仅显示Shop"的菜单状态
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
 		self:setMenuVisibility(player, true)
@@ -417,6 +423,12 @@ function GameInstance:onPlayerLeft(seat, player)
 		-- 无论什么阶段，都要恢复镜头和禁用Leave按钮
 		self:disableLeaveButton(player)
 		self:sendCameraControl(player, "restore")
+
+		-- ✨ 新增：倒计时中有人离开时，为剩余玩家恢复镜头自由状态
+		if self.gameState.isCountingDown and self.gameState.player1 then
+			-- 剩余玩家的镜头恢复为自由状态（就像单人坐下时一样）
+			self:sendCameraControl(self.gameState.player1, "restore")
+		end
 
 		-- 离席时补发菜单指令：确保离席玩家立刻恢复到"仅显示Shop"的菜单状态
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
@@ -595,6 +607,11 @@ function GameInstance:startCountdown()
 	-- 启用AirWall阻隔外部玩家干扰
 	self:enableAirWalls()
 
+	-- ✨ 新增：在倒计时开始时锁定镜头到准备阶段
+	-- 此时两个玩家都已坐好，现在锁定镜头对准桌子
+	self:sendCameraControl(self.gameState.player1, "enterPrepare")
+	self:sendCameraControl(self.gameState.player2, "enterPrepare")
+
 	-- 隐藏Menu界面（进入对局状态）
 	self:hideMenuForBothPlayers()
 
@@ -632,6 +649,15 @@ function GameInstance:cancelCountdown()
 
 	-- 显示Menu界面（退出对局状态）
 	self:showMenuForBothPlayers()
+
+	-- ✨ 新增：取消倒计时时，为剩余在座位上的玩家恢复镜头自由状态
+	-- 这样玩家在取消倒计时后会恢复到单人坐下时的镜头自由状态
+	if self.gameState.player1 then
+		self:sendCameraControl(self.gameState.player1, "restore")
+	end
+	if self.gameState.player2 then
+		self:sendCameraControl(self.gameState.player2, "restore")
+	end
 
 	-- 倒计时中断后重置留席玩家：为仍在座位上的玩家显式设置只保留Shop按钮
 	-- Skin和Emote按钮始终显示，不受游戏状态影响
@@ -1058,7 +1084,8 @@ function GameInstance:refreshSeatState()
 	if self.gameState.gamePhase == "waiting" then
 		if actualPlayer1 then
 			self:enableLeaveButton(actualPlayer1)
-			self:sendCameraControl(actualPlayer1, "enterPrepare")
+			-- 🔧 修改：等待阶段不锁定镜头，保持镜头自由
+			-- 镜头锁定延迟到倒计时阶段进行
 			-- 设置正确的菜单显示：只显示shop按钮
 			-- Skin和Emote按钮始终显示，不受游戏状态影响
 			self:setSpecificMenuVisibility(actualPlayer1, {
@@ -1068,7 +1095,8 @@ function GameInstance:refreshSeatState()
 		end
 		if actualPlayer2 then
 			self:enableLeaveButton(actualPlayer2)
-			self:sendCameraControl(actualPlayer2, "enterPrepare")
+			-- 🔧 修改：等待阶段不锁定镜头，保持镜头自由
+			-- 镜头锁定延迟到倒计时阶段进行
 			-- 设置正确的菜单显示：只显示shop按钮
 			-- Skin和Emote按钮始终显示，不受游戏状态影响
 			self:setSpecificMenuVisibility(actualPlayer2, {
