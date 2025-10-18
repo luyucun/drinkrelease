@@ -61,23 +61,54 @@ function CameraController.restoreOriginalCamera()
 	end
 end
 
--- 计算镜头CFrame
-function CameraController.calculateCameraCFrame(tablePosition, config)
-	-- 计算镜头位置
-	local cameraPosition = Vector3.new(
-		tablePosition.X,
-		tablePosition.Y + config.height,
-		tablePosition.Z + config.distance
-	)
+-- 计算镜头CFrame（支持表旋转）
+-- 参数说明：
+--   tableData: 包含 {position: Vector3, cframe: CFrame} 或仅 {position: Vector3}（后向兼容）
+--   config: 配置参数 {height, angle, distance}
+function CameraController.calculateCameraCFrame(tableData, config)
+	-- 处理向后兼容性：如果传入的是Vector3，转换为新格式
+	local tablePosition
+	local tableCFrame
 
-	-- 计算看向桌子的方向
-	local lookDirection = (tablePosition - cameraPosition).Unit
+	if typeof(tableData) == "Vector3" then
+		-- 旧式调用（仅传入Position）
+		tablePosition = tableData
+		tableCFrame = CFrame.new(tablePosition)
+	elseif typeof(tableData) == "table" then
+		-- 新式调用（传入{position, cframe}或仅{position}）
+		tablePosition = tableData.position or tableData.tablePosition
+		tableCFrame = tableData.cframe or tableData.tableCFrame or CFrame.new(tablePosition)
+	else
+		-- 未知格式，使用默认
+		tablePosition = Vector3.new(0, 0, 0)
+		tableCFrame = CFrame.new(tablePosition)
+	end
 
-	-- 创建CFrame，让镜头看向桌子
-	local cframe = CFrame.lookAt(cameraPosition, tablePosition)
+	-- 使用表的本地坐标系计算偏移
+	-- config中的offset是相对于表的局部坐标
+	local offsetX = config.offsetX or 0
+	local offsetY = config.height or config.offsetY or 0
+	local offsetZ = config.distance or config.offsetZ or 0
 
-	-- 应用俯视角度
-	local angleRadians = math.rad(config.angle)
+	-- 计算世界坐标中的偏移
+	-- 注意：LookVector 是表看向的方向，所以要用 -LookVector 获得表的"背后"
+	-- distance 参数应该偏移到表的背后（相对于表的朝向）
+	-- 技巧：如果某个桌子的正向相反，可在配置中设置 distance 为负数以调整
+	local offset = tableCFrame.RightVector * offsetX
+	           + tableCFrame.UpVector * offsetY
+	           - tableCFrame.LookVector * offsetZ
+
+	-- 镜头位置 = 表中心 + 旋转后的偏移
+	local cameraPosition = tablePosition + offset
+
+	-- 镜头看向表的中心
+	local targetPosition = tablePosition
+
+	-- 创建CFrame，让镜头看向桌子中心
+	local cframe = CFrame.lookAt(cameraPosition, targetPosition)
+
+	-- 应用俯视角度（向上倾斜）
+	local angleRadians = math.rad(config.angle or 5)
 	cframe = cframe * CFrame.Angles(angleRadians, 0, 0)
 
 	return cframe
@@ -113,11 +144,11 @@ function CameraController.moveCameraTo(targetCFrame, duration)
 end
 
 -- 进入准备阶段镜头
-function CameraController.enterPreparePhase(tablePosition)
+function CameraController.enterPreparePhase(tableData)
 	CameraController.saveOriginalCamera()
 
 	local targetCFrame = CameraController.calculateCameraCFrame(
-		tablePosition,
+		tableData,
 		CAMERA_CONFIG.preparePhase
 	)
 
@@ -125,9 +156,9 @@ function CameraController.enterPreparePhase(tablePosition)
 end
 
 -- 进入毒药注入阶段镜头
-function CameraController.enterPoisonPhase(tablePosition)
+function CameraController.enterPoisonPhase(tableData)
 	local targetCFrame = CameraController.calculateCameraCFrame(
-		tablePosition,
+		tableData,
 		CAMERA_CONFIG.poisonPhase
 	)
 
@@ -135,9 +166,9 @@ function CameraController.enterPoisonPhase(tablePosition)
 end
 
 -- 进入选择奶茶阶段镜头
-function CameraController.enterSelectPhase(tablePosition)
+function CameraController.enterSelectPhase(tableData)
 	local targetCFrame = CameraController.calculateCameraCFrame(
-		tablePosition,
+		tableData,
 		CAMERA_CONFIG.selectPhase
 	)
 
@@ -145,42 +176,105 @@ function CameraController.enterSelectPhase(tablePosition)
 end
 
 -- 镜头聚焦到指定玩家
-function CameraController.focusOnPlayer(targetPlayer, duration)
+-- 支持新参数格式：targetPlayer, duration, tableData (可选)
+function CameraController.focusOnPlayer(targetPlayer, duration, tableData)
 	if not targetPlayer or not targetPlayer.Character then return end
 
 	local character = targetPlayer.Character
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then return end
 
-	-- 获取桌子位置用于判断玩家位置
-	local tablePosition = CameraController.getTablePosition()
-	if not tablePosition then
-		warn("无法获取桌子位置，使用默认镜头设置")
-		return
+	-- 获取表数据用于判断玩家位置
+	-- 优先使用传入的tableData，否则尝试从服务端获取或本地查询
+	local tableCFrame
+	local tablePosition
+
+	if tableData and tableData.cframe then
+		tableCFrame = tableData.cframe
+		tablePosition = tableData.position or tableData.cframe.Position
+	else
+		-- 尝试从本地获取表的CFrame
+		tableCFrame = CameraController.getTableCFrame()
+		if not tableCFrame then
+			-- 降级处理：只获取位置
+			tablePosition = CameraController.getTablePosition()
+			if not tablePosition then
+				warn("无法获取桌子信息，使用默认镜头设置")
+				return
+			end
+			tableCFrame = CFrame.new(tablePosition)
+		else
+			tablePosition = tableCFrame.Position
+		end
 	end
 
 	local playerPosition = humanoidRootPart.Position
 
-	-- 判断玩家在桌子的左边还是右边
-	local relativeX = playerPosition.X - tablePosition.X
-	local isPlayerOnLeft = relativeX < 0
+	-- 🔑 改进：使用表的本地坐标系判断左/右
+	-- 把玩家位置转换到表的本地坐标系
+	local playerLocalPos = tableCFrame:PointToObjectSpace(playerPosition)
+	local isPlayerOnLeft = playerLocalPos.X < 0
 
-	-- 根据玩家位置调整镜头位置
-	local cameraOffset
+	-- 根据玩家位置调整镜头位置（使用表的本地坐标系）
+	local cameraOffsetLocal
 	if isPlayerOnLeft then
-		-- 左边玩家：镜头位于玩家右前方偏上，角度稍微偏向玩家
-		cameraOffset = Vector3.new(5, 4, 3)
+		-- 左边玩家：镜头位于玩家右前方偏上
+		-- 相对表的本地坐标：右轴正方向、上轴正方向、表背后方向的组合
+		-- 使用 -LookVector 是因为 LookVector 指向表看向的方向，表的"前方"是 -LookVector
+		cameraOffsetLocal = tableCFrame.RightVector * 5 + tableCFrame.UpVector * 4 - tableCFrame.LookVector * 3
 	else
-		-- 右边玩家：镜头位于玩家左前方偏上，角度稍微偏向玩家
-		cameraOffset = Vector3.new(-5, 4, 3)
+		-- 右边玩家：镜头位于玩家左前方偏上
+		-- 相对表的本地坐标：右轴负方向、上轴正方向、表背后方向的组合
+		cameraOffsetLocal = tableCFrame.RightVector * (-5) + tableCFrame.UpVector * 4 - tableCFrame.LookVector * 3
 	end
 
-	local cameraPosition = playerPosition + cameraOffset
+	local cameraPosition = playerPosition + cameraOffsetLocal
 	-- 镜头目标点：玩家胸部到头部之间的位置，确保看到脸部
 	local lookAtTarget = playerPosition + Vector3.new(0, 2, 0)
 	local targetCFrame = CFrame.lookAt(cameraPosition, lookAtTarget)
 
 	CameraController.moveCameraTo(targetCFrame, duration or 2)
+end
+
+-- 获取桌子的CFrame（包含位置和旋转）
+function CameraController.getTableCFrame(tableId)
+	local workspace = game.Workspace
+
+	local twoPlayerFolder = workspace:FindFirstChild("2Player")
+	if not twoPlayerFolder then
+		warn("CameraController: 未找到Workspace.2Player文件夹")
+		return nil
+	end
+
+	-- 如果没有指定tableId，尝试根据玩家位置检测
+	if not tableId then
+		tableId = CameraController.detectPlayerTable()
+		if not tableId then
+			warn("CameraController: 无法检测玩家所在桌子，使用默认桌子")
+			tableId = "2player_group1"
+		end
+	end
+
+	local battleGroup = twoPlayerFolder:FindFirstChild(tableId)
+	if not battleGroup then
+		warn("CameraController: 未找到桌子: " .. tableId)
+		return nil
+	end
+
+	local classicTable = battleGroup:FindFirstChild("ClassicTable")
+	if not classicTable then
+		warn("CameraController: 桌子 " .. tableId .. " 未找到ClassicTable")
+		return nil
+	end
+
+	local tablePart = classicTable:FindFirstChild("TablePart")
+	if tablePart and tablePart:IsA("Part") then
+		-- 返回完整的CFrame（包含位置和旋转）
+		return tablePart.CFrame
+	end
+
+	warn("CameraController: 桌子 " .. tableId .. " 无法找到ClassicTable下的TablePart")
+	return nil
 end
 
 -- 获取桌子位置的函数（支持多桌）
@@ -289,41 +383,51 @@ local function setupRemoteEvents()
 	local cameraControlEvent = remoteEventsFolder:WaitForChild("CameraControl", 30)
 	if cameraControlEvent then
 		cameraControlEvent.OnClientEvent:Connect(function(action, data)
-			-- 从data中获取桌子信息（优先使用服务端提供的信息）
+			-- 从data中获取表信息
 			local tableId = data and data.tableId
-			local tablePosition = data and data.tablePosition
+			local tableData = data and data.tableData
 
-			-- 如果服务端提供了桌子位置，直接使用
-			if tablePosition then
-				-- 使用服务端提供的桌子位置
-			else
-				-- 否则尝试获取桌子位置
-				tablePosition = CameraController.getTablePosition(tableId)
-				if not tablePosition then
-					warn("CameraController: 无法获取桌子位置，镜头控制失效")
-					return
+			-- 构建tableData：优先使用服务端提供的完整数据
+			if not tableData then
+				tableData = {}
+			end
+
+			-- 如果没有tableCFrame，尝试本地获取
+			if not tableData.cframe or not tableData.cframe.Position then
+				-- 从本地查询表的CFrame
+				local localTableCFrame = CameraController.getTableCFrame(tableId)
+				if localTableCFrame then
+					tableData.cframe = localTableCFrame
+					tableData.position = localTableCFrame.Position
+				else
+					-- 降级：仅使用Position
+					tableData.position = data.tablePosition or (tableData.position)
+					if not tableData.position then
+						warn("CameraController: 无法获取表数据，镜头控制失效")
+						return
+					end
 				end
 			end
 
 			if action == "enterPrepare" then
-				CameraController.enterPreparePhase(tablePosition)
+				CameraController.enterPreparePhase(tableData)
 			elseif action == "enterPoison" then
-				CameraController.enterPoisonPhase(tablePosition)
+				CameraController.enterPoisonPhase(tableData)
 			elseif action == "enterSelect" then
-				CameraController.enterSelectPhase(tablePosition)
+				CameraController.enterSelectPhase(tableData)
 			elseif action == "focusPlayer" then
 				if data and data.player then
-					CameraController.focusOnPlayer(data.player, data.duration)
+					CameraController.focusOnPlayer(data.player, data.duration, tableData)
 				end
 			elseif action == "focusOnSelection" then
-				CameraController.enterSelectPhase(tablePosition)
+				CameraController.enterSelectPhase(tableData)
 			elseif action == "watchOther" then
-				CameraController.enterSelectPhase(tablePosition)
+				CameraController.enterSelectPhase(tableData)
 			elseif action == "focusOnDrinking" then
 				if data and data.targetPlayer then
 					local targetPlayer = Players:FindFirstChild(data.targetPlayer)
 					if targetPlayer then
-						CameraController.focusOnPlayer(targetPlayer, 3)
+						CameraController.focusOnPlayer(targetPlayer, 3, tableData)
 					else
 						warn("CameraController: 未找到目标玩家: " .. tostring(data.targetPlayer))
 					end

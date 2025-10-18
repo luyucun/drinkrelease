@@ -793,6 +793,13 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 		return false
 	end
 
+	-- ✅ 关键修复：在函数顶部定义 selectionState，避免后续 task.delay 回调中出现 nil 错误
+	local selectionState = getSelectionState(tableId)
+	if not selectionState then
+		warn("playDrinkingAnimation: 无法获取选择状态")
+		return false
+	end
+
 	-- 延迟加载DrinkHandManager
 	if not DrinkHandManager then
 		local success, module = pcall(function()

@@ -682,6 +682,56 @@ function DrinkSelectionClient.showReward(data)
 	-- 暂时只输出日志
 end
 
+-- 停止饮用动画（关键修复：客户端实现动画停止逻辑）
+-- 🔧 修复V5：这是解决其他客户端看到无限循环动画的关键
+function DrinkSelectionClient.stopDrinkingAnimationForPlayer(targetPlayerName, drinkIndex)
+	if not targetPlayerName then
+		warn("DrinkSelectionClient.stopDrinkingAnimationForPlayer: 缺少目标玩家名称")
+		return
+	end
+
+	-- 找到目标玩家
+	local targetPlayer = game:GetService("Players"):FindFirstChild(targetPlayerName)
+	if not targetPlayer or not targetPlayer.Character then
+		-- 玩家可能已离开，无需处理
+		return
+	end
+
+	local character = targetPlayer.Character
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- 🔑 关键修复：遍历所有正在播放的动画轨道
+	-- 找到喝奶茶动画对应的 track 并停止它
+	local playingTracks = animator:GetPlayingAnimationTracks()
+	local DRINKING_ANIMATION_ID = "rbxassetid://71655128068947"
+
+	for _, track in ipairs(playingTracks) do
+		-- 检查这是否是喝奶茶的动画
+		if track and track.Animation and track.Animation.AnimationId == DRINKING_ANIMATION_ID then
+			-- 停止动画
+			pcall(function()
+				track:Stop(0.1)  -- 淡出0.1秒
+			end)
+		end
+	end
+
+	-- 🔑 补充修复：移除手中的奶茶（如果有的话）
+	-- 从 DrinkHandManager 中移除手持道具
+	if _G.DrinkHandManager and _G.DrinkHandManager.removeDrinkFromHand then
+		pcall(function()
+			_G.DrinkHandManager.removeDrinkFromHand(targetPlayer)
+		end)
+	end
+end
+
 -- 注意：奶茶点击检测现在完全由服务器端DrinkManager处理
 -- 客户端不再直接监听点击事件，避免重复处理导致双击问题
 
@@ -718,6 +768,12 @@ function DrinkSelectionClient.setupRemoteEvents()
 			DrinkSelectionClient.updateSelectTips(data)
 		elseif action == "showPoisonVerifyResult" then
 			DrinkSelectionClient.showPoisonVerifyResult(data)
+		elseif action == "stopDrinkingAnimation" then
+			-- 🔧 修复V5：处理停止饮用动画的指令
+			-- 这是解决其他客户端看到无限循环动画的关键
+			if data and data.targetPlayer then
+				DrinkSelectionClient.stopDrinkingAnimationForPlayer(data.targetPlayer, data.drinkIndex)
+			end
 		end
 	end)
 

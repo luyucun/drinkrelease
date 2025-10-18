@@ -314,7 +314,7 @@ function GameInstance:updatePlayerCount()
 	if count == 0 then
 		self.numLabel.TextColor3 = Color3.fromRGB(255, 255, 255)  -- 白色
 	elseif count == 1 then
-		self.numLabel.TextColor3 = Color3.fromRGB(255, 0, 0)      -- 红色
+		self.numLabel.TextColor3 = Color3.fromRGB(255, 170, 0)      -- 橙色
 	elseif count == 2 then
 		self.numLabel.TextColor3 = Color3.fromRGB(0, 255, 0)      -- 绿色
 	end
@@ -482,6 +482,12 @@ function GameInstance:sendCameraControl(player, action, data)
 	local cameraData = data or {}
 	cameraData.tableId = self.tableId
 	cameraData.tablePosition = self.tablePart.Position
+
+	-- ✅ 改进：传递表的完整CFrame（包含旋转）而不仅仅是位置
+	cameraData.tableData = {
+		position = self.tablePart.Position,
+		cframe = self.tablePart.CFrame  -- 包含旋转信息
+	}
 
 	cameraControlEvent:FireClient(player, action, cameraData)
 end
