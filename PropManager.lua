@@ -355,8 +355,10 @@ function PropManager.handleDeveloperProductPurchase(player, propId)
 			-- 使用ShopManager的统一购买流程
 			_G.ShopManager.handlePurchaseRequest(player, {productId = shopProductId})
 		else
-			-- 备用方案：直接调用MarketplaceService
-			warn("PropManager: 未找到对应的Shop商品，使用备用购买方案")
+			-- ✅ 修复：增强日志信息，便于调试ShopConfig配置问题
+			print("⚠️ PropManager: 开发者商品ID " .. developerProductId .. " 未在ShopConfig中定义")
+			print("   道具: " .. propInfo.name .. " (ID: " .. propId .. ")")
+			print("   使用备用购买方案，直接调用Robux购买")
 			MarketplaceService:PromptProductPurchase(player, developerProductId)
 		end
 	else

@@ -119,6 +119,7 @@ function GamePassManager.verifyGamePassOwnership(player, gamePassId, maxRetries)
 	end
 
 	maxRetries = maxRetries or CONFIG.MAX_RETRY_ATTEMPTS
+	local lastError = nil
 
 	for attempt = 1, maxRetries do
 		local success, ownsGamePass = pcall(function()
@@ -129,21 +130,25 @@ function GamePassManager.verifyGamePassOwnership(player, gamePassId, maxRetries)
 			if ownsGamePass then
 				return true
 			else
-				-- 如果还有重试机会，等待后继续
-				if attempt < maxRetries then
-					wait(CONFIG.RETRY_DELAY)
-				end
+				-- ✅ 修复：玩家确实不拥有GamePass，不需要重试，直接返回
+				-- 只有API调用失败时才需要重试
+				return false
 			end
 		else
-			warn("GamePassManager: GamePass验证API调用失败 (尝试 " .. attempt .. "): " .. tostring(ownsGamePass))
+			-- API调用失败，记录错误并重试
+			lastError = ownsGamePass
 
+			-- ✅ 修复：优化日志等级 - 只在最后一次重试失败时显示warn，之前的重试使用print
 			if attempt < maxRetries then
+				print("GamePassManager: GamePass验证API调用失败，正在重试 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
 				wait(CONFIG.RETRY_DELAY)
+			else
+				-- 最后一次重试失败才显示warn
+				warn("🔴 GamePassManager: 验证GamePass失败，已达最大重试次数(" .. maxRetries .. ")，玩家: " .. player.Name .. ", 错误: " .. tostring(lastError))
 			end
 		end
 	end
 
-	warn("GamePassManager: 验证GamePass失败，已达最大重试次数(" .. maxRetries .. ")，玩家: " .. player.Name)
 	return false
 end
 

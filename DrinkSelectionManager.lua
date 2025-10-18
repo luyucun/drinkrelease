@@ -228,16 +228,49 @@ end
 
 -- 切换到下一个玩家的倒计时
 function DrinkSelectionManager.switchPlayerCountdown(tableId, newCurrentPlayer)
-	-- 停止当前倒计时
-	DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
+	-- ✅ 修复V1：不使用 stopCountdown + switchCurrentPlayer，改用 resetCountdown 保持倒计时连续
+	-- 这样可以避免倒计时中断导致 switchCurrentPlayer 报 "未激活" 的错误
 
-	-- 更新CountdownManager中的当前玩家
-	if CountdownManager and CountdownManager.switchCurrentPlayer then
-		CountdownManager.switchCurrentPlayer(tableId, newCurrentPlayer)
+	if not CountdownManager then
+		CountdownManager = _G.CountdownManager
+		if not CountdownManager then
+			warn("DrinkSelectionManager.switchPlayerCountdown: CountdownManager未加载")
+			return false
+		end
 	end
 
-	-- 重新启动倒计时
-	DrinkSelectionManager.startSelectionTurnCountdown(tableId, newCurrentPlayer)
+	local selectionState = getSelectionState(tableId)
+	if not selectionState or not selectionState.activePhase then
+		warn("DrinkSelectionManager.switchPlayerCountdown: 选择阶段未激活")
+		return false
+	end
+
+	-- 首先检查倒计时是否激活
+	if not CountdownManager.isCountdownActive(tableId) then
+		-- 倒计时不活跃，直接重新启动
+		return DrinkSelectionManager.startSelectionTurnCountdown(tableId, newCurrentPlayer)
+	end
+
+	-- 倒计时仍在运行，使用 resetCountdown 重置计时，同时更新当前玩家
+	local config = CountdownManager.getConfig()
+	local selectionConfig = config.SELECTION_PHASE_DURATION
+
+	-- 更新CountdownManager中的当前玩家（倒计时仍在运行）
+	if CountdownManager and CountdownManager.switchCurrentPlayer then
+		local switchSuccess = CountdownManager.switchCurrentPlayer(tableId, newCurrentPlayer)
+		if not switchSuccess then
+			-- 如果switchCurrentPlayer失败（不应该发生），重新启动倒计时
+			DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
+			return DrinkSelectionManager.startSelectionTurnCountdown(tableId, newCurrentPlayer)
+		end
+	end
+
+	-- 重置倒计时计数器（但保持倒计时活跃）
+	if CountdownManager and CountdownManager.resetCountdown then
+		CountdownManager.resetCountdown(tableId, selectionConfig)
+	end
+
+	return true
 end
 -- ========== V1.4 倒计时功能结束 ==========
 
@@ -685,7 +718,19 @@ function DrinkSelectionManager.onPlayerSelectDrink(player, drinkIndex)
 	end
 
 	if player ~= selectionState.currentPlayer then
-		warn("不是该玩家的回合: " .. player.Name .. "，当前回合: " .. (selectionState.currentPlayer and selectionState.currentPlayer.Name or "无"))
+		-- ✅ 修复V2: 增强错误信息，同时记录处理标志状态以协助调试
+		local currentPlayerName = (selectionState.currentPlayer and selectionState.currentPlayer.Parent and selectionState.currentPlayer.Name) or "无"
+		warn("❌ 不是该玩家的回合: " .. player.Name .. "，当前回合: " .. currentPlayerName ..
+			", isProcessing=" .. tostring(selectionState.isProcessingSelection) ..
+			", waitingPlayer=" .. (selectionState.waitingPlayer and selectionState.waitingPlayer.Name or "无"))
+
+		-- 同时通知客户端拒绝这次选择（客户端应该忽略结果）
+		if player and player.Parent then
+			drinkSelectionEvent:FireClient(player, "selectionRejected", {
+				reason = "not_your_turn",
+				currentPlayer = currentPlayerName
+			})
+		end
 		return
 	end
 
@@ -853,6 +898,18 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 		if handDrinkModel and handDrinkModel.Parent then
 			pcall(function()
 				handDrinkModel:Destroy()
+			end)
+		end
+
+		-- ✅ 修复V3（关键）：销毁原始克隆模型
+		-- 这是资源泄漏的关键修复
+		-- clonedDrinkModel 在 executeDrinking 中被克隆到 workspace
+		-- 用完后需要立即销毁，否则会一直留在 workspace 中
+		if clonedDrinkModel and clonedDrinkModel.Parent then
+			pcall(function()
+				clonedDrinkModel:Destroy()
+				-- 调试日志：可选，用于验证销毁是否执行
+				-- print("✅ 销毁了克隆模型 (饮料 " .. drinkIndex .. ")")
 			end)
 		end
 
@@ -1184,6 +1241,15 @@ function DrinkSelectionManager.switchToNextPlayer(tableId)
 	if not selectionState then
 		warn("switchToNextPlayer: 无法获取桌子 " .. tableId .. " 的状态")
 		return
+	end
+
+	-- ✅ 修复V2: 在切换玩家之前，立即禁用等待方的所有交互
+	-- 防止等待方在玩家交换和UI更新之间的时间窗口内仍然能点击
+	if selectionState.waitingPlayer and selectionState.waitingPlayer.Parent then
+		-- 立即向等待方发送隐藏SelectTips（禁止交互）
+		drinkSelectionEvent:FireClient(selectionState.waitingPlayer, "hideSelectTips")
+		-- 立即禁用等待方的点击处理（客户端需要实现此逻辑）
+		drinkSelectionEvent:FireClient(selectionState.waitingPlayer, "disableInput", {reason = "switching_turn"})
 	end
 
 	-- 隐藏当前等待玩家的等待提示

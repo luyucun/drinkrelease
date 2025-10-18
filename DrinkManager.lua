@@ -551,6 +551,44 @@ function DrinkManager.clearDrinksForTable(tableId)
 		end
 	end
 
+	-- ✅ 修复V3（备用方案）：清理workspace中的克隆模型
+	-- 如果 playDrinkingAnimation 中的销毁逻辑没有执行（异常情况）
+	-- 这里作为最后的保险，确保所有残留的克隆模型都被清理
+	local clonedDrinksCount = 0
+	local workspaceChildren = workspace:FindFirstChild("Folder") and workspace:GetChildren() or workspace:GetChildren()
+	for _, child in pairs(workspace:GetChildren()) do
+		-- 检查是否是从 DrinkModel 克隆出来的模型
+		-- 这些模型通常没有特殊的命名规则，但会在 ClassicTable 之外
+		if child:IsA("Model") and child.Name:match("^Drink") and not twoPlayerFolder:FindFirstChild(child.Name) then
+			-- 额外检查：这个模型是否真的属于这张桌子
+			-- 通过查找与表UUID关联的标记来判断
+			local belongsToThisTable = false
+
+			-- 检查模型是否在 Workspace 根目录且与我们正在清理的桌子关联
+			for _, desc in pairs(child:GetDescendants()) do
+				if desc:IsA("StringValue") and desc.Value == tableId then
+					belongsToThisTable = true
+					break
+				end
+			end
+
+			-- 即使没有标记，如果这个模型在 workspace 中且是克隆出来的饮料模型，也清理
+			-- （这是一个激进的清理策略，防止遗漏）
+			if belongsToThisTable or (child.Name:match("Drink") and not twoPlayerFolder) then
+				pcall(function()
+					child:Destroy()
+					clonedDrinksCount = clonedDrinksCount + 1
+				end)
+			end
+		end
+	end
+
+	if clonedDrinksCount > 0 then
+		print("⚠️ 清理了 " .. clonedDrinksCount .. " 个遗留的克隆饮料模型 (表: " .. tableId .. ")")
+		print("   这可能表示 playDrinkingAnimation 中的销毁逻辑未正确执行")
+	end
+
+
 end
 
 -- 为奶茶注入毒药（支持桌子ID）
