@@ -913,22 +913,51 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 			end)
 		end
 
-		-- 🔧 关键修复：Stop 动画后，等待停止状态被复制到其他客户端，再销毁轨道
-		-- 否则其他客户端还没收到 Stop 信号，会继续循环播放动画
+		-- ✅ 修复V4（关键）：停止动画并通知所有客户端
+		-- 解决其他客户端看到动画无限循环的问题
+		-- 问题：服务器 Stop → Destroy 太快，其他客户端来不及同步 Stop 状态
+		-- 解决：先 Stop，等待网络同步，再 Destroy
 		pcall(function()
-			animationTrack:Stop(0.1)
+			-- 1. 停止动画
+			animationTrack:Stop(0.1)  -- 淡出0.1秒
 
-			-- 监听 Stopped 事件，确保停止状态被正确复制
+			-- 2. 向所有客户端广播停止动画的指令
+			-- 这确保所有客户端都能停止对应的动画轨道
+			local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+			if remoteEventsFolder then
+				local drinkSelectionEvent = remoteEventsFolder:FindFirstChild("DrinkSelection")
+				if drinkSelectionEvent then
+					-- 通知两个玩家停止饮用动画
+					if selectionState.player1 and selectionState.player1.Parent then
+						drinkSelectionEvent:FireClient(selectionState.player1, "stopDrinkingAnimation", {
+							targetPlayer = player.Name,
+							drinkIndex = drinkIndex
+						})
+					end
+					if selectionState.player2 and selectionState.player2.Parent then
+						drinkSelectionEvent:FireClient(selectionState.player2, "stopDrinkingAnimation", {
+							targetPlayer = player.Name,
+							drinkIndex = drinkIndex
+						})
+					end
+				end
+			end
+
+			-- 3. 等待 Stopped 事件确保动画停止状态被复制
+			-- 这给网络足够的时间来同步 Stop 信号到其他客户端
 			local stoppedConnection
 			stoppedConnection = animationTrack.Stopped:Connect(function()
-				-- 停止事件已触发，状态已复制，现在可以安全销毁
+				-- 停止事件已触发，状态已复制到其他客户端，现在可以安全销毁
 				stoppedConnection:Disconnect()
+
+				-- 4. 现在可以安全销毁 AnimationTrack 了
 				animationTrack:Destroy()
 			end)
 
-			-- 备用方案：如果 5 秒后 Stopped 事件还没触发（异常情况），也销毁
+			-- 4. 备用方案：如果 5 秒后 Stopped 事件还没触发（异常情况），也销毁
+			-- 这防止在异常情况下 AnimationTrack 永久存在
 			task.delay(5, function()
-				if stoppedConnection.Connected then
+				if stoppedConnection and stoppedConnection.Connected then
 					stoppedConnection:Disconnect()
 					pcall(function()
 						animationTrack:Destroy()
