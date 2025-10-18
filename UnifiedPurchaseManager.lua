@@ -355,40 +355,6 @@ function UnifiedPurchaseManager.initialize()
 		end
 	end)
 
-	-- 🔧 注册毒药选择额外毒药商品处理器
-	task.spawn(function()
-		task.wait(4) -- 等待PoisonSelectionManager加载
-		if _G.PoisonSelectionManager then
-			UnifiedPurchaseManager.registerHandler("poison_extra", function(receiptInfo, player)
-				-- 处理额外毒药商品 (ProductId: 3416569819)
-				if receiptInfo.ProductId == 3416569819 then
-					-- 检查PoisonSelectionManager是否有处理接口
-					if _G.PoisonSelectionManager.onDeveloperProductPurchaseSuccess then
-						-- 🔧 关键修复：使用pcall保护Manager调用
-						local callSuccess, success = pcall(function()
-							return _G.PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, receiptInfo.ProductId)
-						end)
-
-						if not callSuccess then
-							warn("❌ 额外毒药购买调用异常: " .. player.Name .. " - " .. tostring(success))
-							return Enum.ProductPurchaseDecision.NotProcessedYet
-						end
-
-						if success then
-							return Enum.ProductPurchaseDecision.PurchaseGranted
-						else
-							return Enum.ProductPurchaseDecision.NotProcessedYet
-						end
-					else
-						warn("❌ UnifiedPurchaseManager: PoisonSelectionManager.onDeveloperProductPurchaseSuccess方法不存在")
-						return Enum.ProductPurchaseDecision.NotProcessedYet
-					end
-				end
-				return nil -- 不是额外毒药商品，让其他处理器处理
-			end)
-		end
-	end)
-
 	-- 🔧 关键修复：启动定期清理任务，防止processedReceipts无限增长
 	task.spawn(function()
 		while true do

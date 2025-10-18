@@ -132,22 +132,6 @@ function DrinkManager.deepCloneModel(sourceModel)
 	end)
 
 	if success and result then
-		-- 🔍 调试: 检查克隆后的模型结构
-		print(string.format("[DrinkManager] 克隆模型: %s, 类型: %s, 子对象数: %d",
-			result.Name,
-			result.ClassName,
-			#result:GetChildren()
-			))
-
-		-- 列出主要组件
-		local components = {}
-		for _, child in pairs(result:GetChildren()) do
-			table.insert(components, child.Name .. "(" .. child.ClassName .. ")")
-		end
-		if #components > 0 then
-			print(string.format("[DrinkManager]   └─ 包含: %s", table.concat(components, ", ")))
-		end
-
 		return result
 	else
 		warn("模型克隆失败: " .. tostring(result))
@@ -191,7 +175,6 @@ function DrinkManager.getPlayerSkinModel(player, tableId, index)
 	local equippedSkinId = nil
 	if _G.SkinDataManager and _G.SkinDataManager.getEquippedSkin then
 		equippedSkinId = _G.SkinDataManager.getEquippedSkin(player)
-		print(string.format("[DrinkManager] 玩家%s的装备皮肤ID: %s", player.Name, tostring(equippedSkinId)))
 	end
 
 	-- 如果玩家未装备皮肤(nil),使用默认皮肤
@@ -254,19 +237,6 @@ function DrinkManager.getPlayerSkinModel(player, tableId, index)
 		end
 	end
 
-	print(string.format("[DrinkManager] ✅ 找到皮肤模型: %s (玩家: %s)", skinModel.Name, player.Name))
-
-	-- 🔍 调试: 检查源模型的结构
-	print(string.format("[DrinkManager]   源模型类型: %s", skinModel.ClassName))
-	if skinModel:IsA("Model") then
-		print(string.format("[DrinkManager]   PrimaryPart: %s", skinModel.PrimaryPart and skinModel.PrimaryPart.Name or "未设置"))
-		local children = {}
-		for _, child in pairs(skinModel:GetChildren()) do
-			table.insert(children, child.Name .. "(" .. child.ClassName .. ")")
-		end
-		print(string.format("[DrinkManager]   子对象: %s", table.concat(children, ", ")))
-	end
-
 	return skinModel
 end
 
@@ -287,14 +257,6 @@ function DrinkManager.createSingleDrink(tableId, classicTable, index, attachment
 
 	-- 获取玩家的皮肤模型(如果未装备或加载失败,会自动回退到默认模型)
 	local sourceModel = DrinkManager.getPlayerSkinModel(targetPlayer, tableId, index)
-
-	-- 🔍 V2.0调试: 记录皮肤模型选择
-	print(string.format("[DrinkManager] 桌子%s 奶茶%d: 玩家=%s, 皮肤模型=%s",
-		tostring(tableId),
-		index,
-		targetPlayer and targetPlayer.Name or "nil",
-		sourceModel and sourceModel.Name or "nil"
-		))
 
 	local drinkModel = DrinkManager.deepCloneModel(sourceModel)
 
@@ -322,7 +284,6 @@ function DrinkManager.createSingleDrink(tableId, classicTable, index, attachment
 
 	-- 设置模型位置
 	if drinkModel.PrimaryPart then
-		print(string.format("[DrinkManager] 使用PrimaryPart设置位置: %s", drinkModel.PrimaryPart.Name))
 		drinkModel:SetPrimaryPartCFrame(finalCFrame)
 	else
 		-- 如果没有PrimaryPart,尝试自动设置一个并使用MoveTo
@@ -332,9 +293,6 @@ function DrinkManager.createSingleDrink(tableId, classicTable, index, attachment
 		end
 
 		if firstPart then
-			print(string.format("[DrinkManager] ⚠️ 模型%s没有PrimaryPart,自动设置为%s(%s)",
-				drinkModel.Name, firstPart.Name, firstPart.ClassName))
-
 			-- 自动设置PrimaryPart
 			drinkModel.PrimaryPart = firstPart
 
@@ -413,8 +371,6 @@ function DrinkManager.setupDrinkClickDetection(tableId, drinkModel, index)
 				table.insert(clickDetectors, connection)
 				hasClickDetector = true
 
-				print(string.format("[DrinkManager] 为 %s 的 %s 添加了ClickDetector",
-					drinkModel.Name, child.Name))
 			else
 				-- 如果已有ClickDetector，也连接事件
 				local connection = existingDetector.MouseClick:Connect(function(player)
@@ -430,9 +386,6 @@ function DrinkManager.setupDrinkClickDetection(tableId, drinkModel, index)
 	if not hasClickDetector then
 		warn(string.format("[DrinkManager] 桌子 %s 奶茶 %d 没有找到任何Part来添加ClickDetector",
 			tableId, index))
-	else
-		print(string.format("[DrinkManager] 桌子 %s 奶茶 %d 共添加了 %d 个ClickDetector",
-			tableId, index, #clickDetectors))
 	end
 
 	-- 存储所有连接（用于后续清理）
@@ -567,12 +520,6 @@ function DrinkManager.clearDrinksForTable(tableId)
 				end
 			end
 		end
-	end
-
-	-- 记录清理统计信息
-	if disconnectedCount > 0 or failedCount > 0 then
-		print(string.format("[DrinkManager] 桌子%s连接清理统计: 成功断开%d个, 失败%d个",
-			tableId, disconnectedCount, failedCount))
 	end
 
 	-- 重置状态

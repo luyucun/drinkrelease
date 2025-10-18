@@ -86,6 +86,7 @@ local function createNewPoisonState()
 		playerSelections = {},
 		playerConfirmations = {},
 		completedPlayers = {},
+		awaitingReceipt = {},  -- 🔧 新增：记录正在等待购买收据的玩家
 		playerPoisonList = {},
 		extraPoisonTargets = {},
 		startTime = 0,
@@ -196,11 +197,12 @@ function PoisonSelectionManager.onPoisonPhaseTimeout(tableId)
 	-- 为未完成选择的玩家自动选择
 	local playersToAutoSelect = {}
 
-	if not poisonState.completedPlayers[poisonState.player1] then
+	-- 🔧 修复：跳过正在等待购买收据的玩家，不要打断他们的购买流程
+	if not poisonState.completedPlayers[poisonState.player1] and not poisonState.awaitingReceipt[poisonState.player1] then
 		table.insert(playersToAutoSelect, poisonState.player1)
 	end
 
-	if not poisonState.completedPlayers[poisonState.player2] then
+	if not poisonState.completedPlayers[poisonState.player2] and not poisonState.awaitingReceipt[poisonState.player2] then
 		table.insert(playersToAutoSelect, poisonState.player2)
 	end
 
@@ -538,6 +540,13 @@ end
 -- 提供开发者道具购买
 function PoisonSelectionManager.offerDeveloperProduct(player, drinkIndex, tableId)
 
+	-- 🔧 修复：标记该玩家为"等待购买收据"，防止倒计时超时时执行autoSelect
+	local poisonState = getPoisonState(tableId)
+	if poisonState then
+		poisonState.awaitingReceipt[player] = true
+		print("PoisonSelectionManager: 玩家 " .. player.Name .. " 进入购买流程，标记为等待收据")
+	end
+
 	-- 提示购买道具
 	MarketplaceService:PromptProductPurchase(player, DEVELOPER_PRODUCT_ID)
 
@@ -564,6 +573,12 @@ function PoisonSelectionManager.offerDeveloperProduct(player, drinkIndex, tableI
 				-- 避免竞态条件：如果已经等待了15秒，那么检查是否真的超过15秒
 				context.expired = true
 				print("⏰ 购买上下文过期标记: 玩家 " .. player.Name)
+
+				-- 🔧 新增：清除等待标记，允许正常的超时流程处理
+				if poisonState then
+					poisonState.awaitingReceipt[player] = nil
+					print("PoisonSelectionManager: 玩家 " .. player.Name .. " 购买流程超时，清除等待标记")
+				end
 				-- 注意：不再自动调用continueNormalFlow，让ProcessReceipt统一处理
 			end
 		end
@@ -1022,6 +1037,12 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 		local tableId = context.tableId
 		local poisonState = getPoisonState(tableId)
 
+		-- 🔧 修复：清除等待标记，允许该玩家的自动选择流程（如果后续需要）
+		if poisonState then
+			poisonState.awaitingReceipt[player] = nil
+			print("PoisonSelectionManager: 玩家 " .. player.Name .. " 购买成功，清除等待标记")
+		end
+
 		-- 即使上下文过期，如果玩家仍在毒药选择阶段且数据有效，就执行正常流程
 		if poisonState and poisonState.activePhase and (poisonState.player1 == player or poisonState.player2 == player) then
 			PoisonSelectionManager.handleExtraPoisonPurchase(player, context.drinkIndex, tableId)
@@ -1038,6 +1059,13 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 	local tableId = getTableIdFromPlayer(player)
 	if tableId then
 		local poisonState = getPoisonState(tableId)
+
+		-- 🔧 修复：清除等待标记
+		if poisonState then
+			poisonState.awaitingReceipt[player] = nil
+			print("PoisonSelectionManager: 玩家 " .. player.Name .. " 购买成功（降级处理），清除等待标记")
+		end
+
 		if poisonState and poisonState.activePhase then
 			-- 玩家确实在毒药选择阶段
 			local currentSelection = poisonState.playerSelections[player]
@@ -1126,5 +1154,51 @@ end
 
 -- 导出到全局供其他脚本使用
 _G.PoisonSelectionManager = PoisonSelectionManager
+
+-- 🔧 关键修复：主动向UnifiedPurchaseManager注册处理器，不依赖加载顺序
+-- 这样保证ProcessReceipt能正确识别毒药商品
+task.spawn(function()
+	-- 等待UnifiedPurchaseManager就绪
+	local maxWait = 10
+	local waited = 0
+	while not _G.UnifiedPurchaseManager and waited < maxWait do
+		task.wait(0.5)
+		waited = waited + 0.5
+	end
+
+	if _G.UnifiedPurchaseManager and _G.UnifiedPurchaseManager.registerHandler then
+		print("✅ PoisonSelectionManager: 检测到UnifiedPurchaseManager，主动注册毒药商品处理器")
+
+		_G.UnifiedPurchaseManager.registerHandler("poison_extra", function(receiptInfo, player)
+			-- 处理额外毒药商品 (ProductId: 3416569819)
+			if receiptInfo.ProductId == DEVELOPER_PRODUCT_ID then
+				-- 检查是否有处理接口
+				if PoisonSelectionManager.onDeveloperProductPurchaseSuccess then
+					-- 使用pcall保护调用
+					local callSuccess, success = pcall(function()
+						return PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, receiptInfo.ProductId)
+					end)
+
+					if not callSuccess then
+						warn("❌ 毒药商品购买处理异常: " .. player.Name .. " - " .. tostring(success))
+						return Enum.ProductPurchaseDecision.NotProcessedYet
+					end
+
+					if success then
+						return Enum.ProductPurchaseDecision.PurchaseGranted
+					else
+						return Enum.ProductPurchaseDecision.NotProcessedYet
+					end
+				else
+					warn("❌ PoisonSelectionManager.onDeveloperProductPurchaseSuccess方法不存在")
+					return Enum.ProductPurchaseDecision.NotProcessedYet
+				end
+			end
+			return nil -- 不是毒药商品，让其他处理器处理
+		end)
+	else
+		warn("⚠️ PoisonSelectionManager: 等待10秒后仍未找到UnifiedPurchaseManager，毒药商品将无法处理")
+	end
+end)
 
 return PoisonSelectionManager

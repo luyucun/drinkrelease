@@ -170,13 +170,11 @@ function DrinkSelectionManager.startSelectionTurnCountdown(tableId, currentPlaye
 		return false
 	end
 
-	print("DrinkSelectionManager: 选择回合倒计时已启动 - 桌子: " .. tableId .. ", 当前玩家: " .. currentPlayer.Name)
 	return true
 end
 
 -- 选择阶段回合倒计时超时处理
 function DrinkSelectionManager.onSelectionTurnTimeout(tableId)
-	print("DrinkSelectionManager: 选择回合倒计时超时 - 桌子: " .. tableId)
 
 	local selectionState = getSelectionState(tableId)
 	if not selectionState or not selectionState.activePhase then
@@ -195,7 +193,6 @@ end
 
 -- 为玩家自动选择奶茶
 function DrinkSelectionManager.autoSelectDrinkForPlayer(tableId, player)
-	print("DrinkSelectionManager: 自动选择奶茶 - 玩家: " .. player.Name .. ", 桌子: " .. tableId)
 
 	local selectionState = getSelectionState(tableId)
 	if not selectionState or #selectionState.availableDrinks == 0 then
@@ -206,8 +203,6 @@ function DrinkSelectionManager.autoSelectDrinkForPlayer(tableId, player)
 	-- 🔧 修复：使用独立的随机数生成器，确保真正的随机性
 	local randomIndex = AutoSelectRandom:NextInteger(1, #selectionState.availableDrinks)
 	local selectedDrinkIndex = selectionState.availableDrinks[randomIndex]
-
-	print("DrinkSelectionManager: 已为玩家 " .. player.Name .. " 自动选择奶茶 " .. selectedDrinkIndex)
 
 	-- 执行选择逻辑
 	DrinkSelectionManager.onPlayerSelectDrink(player, selectedDrinkIndex)
@@ -221,7 +216,6 @@ end
 
 -- 选择阶段进入警告阶段
 function DrinkSelectionManager.onSelectionTurnWarning(tableId, remainingTime)
-	print("DrinkSelectionManager: 选择回合进入警告阶段 - 桌子: " .. tableId .. ", 剩余: " .. string.format("%.1f", remainingTime) .. "秒")
 	-- 警告阶段的处理（如字体变红）由客户端CountdownClient处理
 end
 
@@ -229,7 +223,6 @@ end
 function DrinkSelectionManager.stopSelectionTurnCountdown(tableId)
 	if CountdownManager and CountdownManager.stopCountdown then
 		CountdownManager.stopCountdown(tableId)
-		print("DrinkSelectionManager: 选择回合倒计时已停止 - 桌子: " .. tableId)
 	end
 end
 
@@ -740,7 +733,7 @@ function DrinkSelectionManager.onPlayerSelectDrink(player, drinkIndex)
 end
 
 -- V1.5新增: 播放喝饮料动作并处理手持道具
-function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId)
+function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId, clonedDrinkModel)
 	if not player or not player.Character then
 		warn("playDrinkingAnimation: 玩家或其角色无效")
 		return false
@@ -781,33 +774,13 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 	local DRINKING_ANIMATION_ID = "rbxassetid://71655128068947"
 	local DRINKING_ANIMATION_DURATION = 3.0  -- 动作长度（秒）
 
-	-- 🔧 修复1：获取桌子上对应位置的奶茶模型，而不是玩家自己装备的皮肤
-	-- 根据drinkIndex确定应该复制哪个模型（奇数位置=玩家A的皮肤，偶数位置=玩家B的皮肤）
-	local drinkState = DrinkManager.getTableState(tableId)
-	local player1, player2 = DrinkManager.getPlayersFromTable(tableId)
-	local drinkModelOnTable = drinkState.activeDrinks[drinkIndex]
-
-	-- 如果桌子上还有模型，从桌子上的模型获取其模型名称来确定皮肤
-	local originalDrinkModel = nil
-	if drinkModelOnTable then
-		-- 从桌子上的模型获取源模型信息
-		originalDrinkModel = DrinkManager.getPlayerSkinModel(player1, tableId, drinkIndex)
-		if drinkIndex % 2 == 0 and player2 then
-			originalDrinkModel = DrinkManager.getPlayerSkinModel(player2, tableId, drinkIndex)
-		end
-	end
-
-	-- 备用方案：如果找不到桌子模型，才用玩家自己的皮肤
-	if not originalDrinkModel then
-		originalDrinkModel = DrinkManager.getPlayerSkinModel(player, tableId, drinkIndex)
-	end
+	-- 🔧 关键修复：直接使用传入的克隆模型，无需重新查找
+	local originalDrinkModel = clonedDrinkModel
 
 	if not originalDrinkModel then
-		warn("playDrinkingAnimation: 无法获取奶茶原始模型 (奶茶 " .. drinkIndex .. ")")
+		warn("playDrinkingAnimation: 无法获取奶茶克隆模型 (奶茶 " .. drinkIndex .. ")")
 		return false
 	end
-
-	print(string.format("[DrinkSelectionManager] ✅ 成功获取原始奶茶模型: %s", originalDrinkModel.Name))
 
 	-- 克隆奶茶模型用于手持
 	local handDrinkModel = DrinkManager.deepCloneModel(originalDrinkModel)
@@ -818,7 +791,6 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 
 	-- 🔧 关键修复：为克隆的模型设置Parent，否则attachDrinkToHand会检测到模型无效
 	handDrinkModel.Parent = workspace
-	print(string.format("[DrinkSelectionManager] ✅ 成功克隆奶茶模型用于手持"))
 
 	-- 🔧 修复：记录玩家是否在座位上，但不强制站立（保持坐着状态播放动画）
 	local wasSeated = false
@@ -826,7 +798,6 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 	if humanoid.Sit and humanoid.SeatPart then
 		wasSeated = true
 		originalSeat = humanoid.SeatPart  -- 记录原始座位
-		print(string.format("[DrinkSelectionManager] 📍 玩家 %s 保持坐着状态播放喝奶茶动画", player.Name))
 		-- 不再强制站立，让玩家在座位上播放动画
 	end
 
@@ -852,8 +823,6 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 		return false
 	end
 
-	print(string.format("[DrinkSelectionManager] ✅ 动画加载成功，开始播放"))
-
 	-- 3. 将奶茶附着到玩家手中
 	local attachSuccess = DrinkHandManager.attachDrinkToHand(player, handDrinkModel, drinkIndex, tableId)
 	if not attachSuccess then
@@ -865,22 +834,19 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 		return false
 	end
 
-	print(string.format("[DrinkSelectionManager] 📍 奶茶已附着到 %s 的右手", player.Name))
-
 	-- 4. 播放动画
 	animationTrack:Play(0.1)  -- 淡入0.1秒
 
 	-- 5. 等待动画完成
 	task.delay(DRINKING_ANIMATION_DURATION, function()
 		if not player or not player.Parent then
-			print("[DrinkSelectionManager] ⚠️ 动画完成时玩家已离线")
 			return
 		end
 
 		-- 从手中移除奶茶
 		local removeSuccess = DrinkHandManager.removeDrinkFromHand(player)
-		if removeSuccess then
-			print(string.format("[DrinkSelectionManager] ✅ 已从 %s 手中移除奶茶", player.Name))
+		if not removeSuccess then
+			-- 备用方案
 		end
 
 		-- 销毁手持奶茶模型
@@ -890,10 +856,28 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 			end)
 		end
 
-		-- 停止并销毁动画
+		-- 🔧 关键修复：Stop 动画后，等待停止状态被复制到其他客户端，再销毁轨道
+		-- 否则其他客户端还没收到 Stop 信号，会继续循环播放动画
 		pcall(function()
 			animationTrack:Stop(0.1)
-			animationTrack:Destroy()
+
+			-- 监听 Stopped 事件，确保停止状态被正确复制
+			local stoppedConnection
+			stoppedConnection = animationTrack.Stopped:Connect(function()
+				-- 停止事件已触发，状态已复制，现在可以安全销毁
+				stoppedConnection:Disconnect()
+				animationTrack:Destroy()
+			end)
+
+			-- 备用方案：如果 5 秒后 Stopped 事件还没触发（异常情况），也销毁
+			task.delay(5, function()
+				if stoppedConnection.Connected then
+					stoppedConnection:Disconnect()
+					pcall(function()
+						animationTrack:Destroy()
+					end)
+				end
+			end)
 		end)
 
 		-- 🔧 修复：确保玩家继续坐在原始座位上，避免座位状态变化导致对局结束
@@ -902,7 +886,7 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 			if finalHumanoid then
 				-- 检查玩家是否仍然坐在原始座位上
 				if finalHumanoid.SeatPart == originalSeat then
-					print(string.format("[DrinkSelectionManager] ✅ 玩家 %s 成功保持在原座位上", player.Name))
+					-- 玩家成功保持在原座位上
 				else
 					-- 如果由于某种原因离开了座位，尝试重新坐回原座位
 					if originalSeat and not originalSeat.Occupant then
@@ -912,16 +896,11 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 							rootPart.CFrame = originalSeat.CFrame + Vector3.new(0, 2, 0)
 							wait(0.1)
 							finalHumanoid.Sit = true
-							print(string.format("[DrinkSelectionManager] 🔄 已将玩家 %s 重新坐回原座位", player.Name))
 						end
-					else
-						print(string.format("[DrinkSelectionManager] ⚠️ 原座位已被占用，玩家 %s 保持当前状态", player.Name))
 					end
 				end
 			end
 		end
-
-		print(string.format("[DrinkSelectionManager] 🎬 玩家 %s 的喝饮料动作播放完成", player.Name))
 	end)
 
 	return true
@@ -953,12 +932,22 @@ function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 		cameraControlEvent:FireClient(selectionState.player2, "focusOnDrinking", {targetPlayer = player.Name})
 	end
 
+	-- 🔧 关键修复：在删除前先克隆桌上的模型！
+	-- 否则 playDrinkingAnimation 里读不到了
+	local drinkState = DrinkManager.getTableState(tableId)
+	local drinkModelOnTable = drinkState.activeDrinks[drinkIndex]
+	local clonedDrinkModel = nil
+	if drinkModelOnTable then
+		clonedDrinkModel = DrinkManager.deepCloneModel(drinkModelOnTable)
+		clonedDrinkModel.Parent = workspace
+	end
+
 	-- 先移除桌上的奶茶模型
 	DrinkManager.removeDrinkForTable(tableId, drinkIndex)
 
 	-- V1.5新增: 播放喝饮料动作
 	-- 动作播放过程中会从DrinkModel文件夹直接获取模型，不依赖桌子状态
-	local animationSuccess = DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId)
+	local animationSuccess = DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId, clonedDrinkModel)
 
 	if not animationSuccess then
 		warn("executeDrinking: 动作播放失败，继续使用原流程")
