@@ -10,23 +10,23 @@ local DrinkManager = require(script.Parent.DrinkManager)
 -- 保存玩家手中奶茶的状态
 local playerHandDrinks = {} -- {[player] = {model = drinkModel, originalInfo = {...}}}
 
--- 获取玩家左手骨骼部位
-local function getLeftHand(character)
+-- 获取玩家右手骨骼部位
+local function getRightHand(character)
 	if not character then return nil end
 
-	-- Roblox R15角色的左手部位
-	local leftHand = character:FindFirstChild("LeftHand")
-	if leftHand then
-		return leftHand
+	-- Roblox R15角色的右手部位
+	local rightHand = character:FindFirstChild("RightHand")
+	if rightHand then
+		return rightHand
 	end
 
 	-- 备用: R6角色检查
-	local leftArm = character:FindFirstChild("Left Arm")
-	if leftArm then
-		return leftArm
+	local rightArm = character:FindFirstChild("Right Arm")
+	if rightArm then
+		return rightArm
 	end
 
-	warn("DrinkHandManager: 无法找到角色的左手")
+	warn("DrinkHandManager: 无法找到角色的右手")
 	return nil
 end
 
@@ -41,7 +41,10 @@ local function createWeld(part0, part1, c0, c1)
 	weld.C0 = c0 or CFrame.new()
 	weld.C1 = c1 or CFrame.new()
 
-	weld.Parent = part1
+	-- 🔧 关键修复：Motor6D必须Parent到其中一个Part才能激活
+	-- 不能Parent到Workspace，否则约束无效
+	-- 将其Parent到Part0（右手），这样当右手移动时，焊接会驱动Part1跟随
+	weld.Parent = part0
 
 	return weld
 end
@@ -49,7 +52,8 @@ end
 -- 计算奶茶在手中的位置和旋转
 -- 需要根据实际测试调整这些参数
 local function calculateDrinkHandCFrame()
-	-- 返回相对于左手的CFrame
+	-- 返回相对于右手的CFrame
+	-- 这个函数现在主要用于参考，实际位置在attachDrinkToHand中明确计算
 	local offset = Vector3.new(0.5, -0.5, 0.3) -- X向右, Y向下, Z向前
 	local rotation = CFrame.Angles(
 		math.rad(90),   -- X轴旋转90度（使杯子竖起来）
@@ -73,7 +77,6 @@ local function hideDrinkNumberLabel(drinkModel)
 	local billboardGui = numPart:FindFirstChild("BillboardGui")
 	if billboardGui then
 		billboardGui.Enabled = false
-		print(string.format("[DrinkHandManager] 已隐藏奶茶的BillboardGui"))
 	else
 		warn("DrinkHandManager: NumPart中找不到BillboardGui")
 	end
@@ -91,7 +94,6 @@ local function showDrinkNumberLabel(drinkModel)
 	local billboardGui = numPart:FindFirstChild("BillboardGui")
 	if billboardGui then
 		billboardGui.Enabled = true
-		print(string.format("[DrinkHandManager] 已显示奶茶的BillboardGui"))
 	end
 end
 
@@ -108,13 +110,11 @@ function DrinkHandManager.attachDrinkToHand(player, drinkModel, drinkIndex, tabl
 		return false
 	end
 
-	print(string.format("[DrinkHandManager] 开始为玩家 %s 手中附着奶茶 %d", player.Name, drinkIndex or 0))
-
 	local character = player.Character
-	local leftHand = getLeftHand(character)
+	local rightHand = getRightHand(character)
 
-	if not leftHand then
-		warn("DrinkHandManager: 无法获取玩家 " .. player.Name .. " 的左手")
+	if not rightHand then
+		warn("DrinkHandManager: 无法获取玩家 " .. player.Name .. " 的右手")
 		return false
 	end
 
@@ -134,10 +134,22 @@ function DrinkHandManager.attachDrinkToHand(player, drinkModel, drinkIndex, tabl
 	local drinkPrimaryPart = drinkModel.PrimaryPart
 	if not drinkPrimaryPart then
 		-- 如果没有PrimaryPart，尝试找到第一个Part
-		local parts = drinkModel:FindFirstChildOfClass("Part")
-		or drinkModel:FindFirstChildOfClass("MeshPart")
-		if parts then
-			drinkPrimaryPart = parts
+		local allPartsInModel = {}
+		for _, child in pairs(drinkModel:GetDescendants()) do
+			if child:IsA("BasePart") then
+				table.insert(allPartsInModel, child)
+			end
+		end
+
+		if #allPartsInModel > 0 then
+			-- 选择Volume最大的Part作为PrimaryPart（通常是主要可见部件）
+			table.sort(allPartsInModel, function(a, b)
+				local volA = a.Size.X * a.Size.Y * a.Size.Z
+				local volB = b.Size.X * b.Size.Y * b.Size.Z
+				return volA > volB
+			end)
+			drinkPrimaryPart = allPartsInModel[1]
+			drinkModel.PrimaryPart = drinkPrimaryPart
 		else
 			warn("DrinkHandManager: 奶茶模型中找不到任何Part")
 			return false
@@ -161,10 +173,18 @@ function DrinkHandManager.attachDrinkToHand(player, drinkModel, drinkIndex, tabl
 	for _, part in pairs(drinkModel:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CanCollide = false
-			part.Anchored = false  -- 解除所有部件的锚固
+			part.Anchored = false  -- 🔧 关键：先解除所有部件的锚固
 			if part ~= drinkPrimaryPart then
 				table.insert(allParts, part)
 			end
+		end
+	end
+
+	-- 🔧 关键修复：移除克隆模型内所有现有的Motor6D焊接
+	-- 因为克隆时会复制原始的焊接关系，这会导致部件"拉回"原始位置
+	for _, descendant in pairs(drinkModel:GetDescendants()) do
+		if descendant:IsA("Motor6D") or descendant:IsA("Weld") or descendant:IsA("WeldConstraint") then
+			descendant:Destroy()
 		end
 	end
 
@@ -173,31 +193,38 @@ function DrinkHandManager.attachDrinkToHand(player, drinkModel, drinkIndex, tabl
 		local weldBetweenParts = Instance.new("Motor6D")
 		weldBetweenParts.Part0 = drinkPrimaryPart
 		weldBetweenParts.Part1 = part
+		-- C0：从Part0(PrimaryPart)看Part的位置偏移
 		weldBetweenParts.C0 = drinkPrimaryPart.CFrame:Inverse() * part.CFrame
-		weldBetweenParts.C1 = part.CFrame:Inverse() * part.CFrame
-		weldBetweenParts.Parent = part
+		-- C1：从Part1(该Part)看自己的位置偏移（通常为单位矩阵）
+		weldBetweenParts.C1 = CFrame.new()
+		weldBetweenParts.Parent = drinkPrimaryPart  -- 焊接到PrimaryPart才能激活
 	end
 
-	-- 设置奶茶在手中的位置
+	-- 🔧 关键修复：现在所有部件都解绑了，可以安全地移动整个模型
+	local c1 = CFrame.new()  -- Part1相对于自己为单位矩阵
+
+	-- 计算目标位置：右手位置 + 偏移
+	-- 偏移量：向右0.3, 向下-0.4, 向前0.2（相对右手坐标系）
+	local offsetPosition = Vector3.new(0.3, -0.4, 0.2)
+	local additionalRotation = CFrame.Angles(math.rad(0), math.rad(90), math.rad(0))
+
+	-- 目标CFrame = 右手的世界坐标 + 相对偏移 + 旋转
+	local targetWorldCFrame = rightHand.CFrame * CFrame.new(offsetPosition) * additionalRotation
+
+	-- 🔧 关键修复：现在模型已经完全解绑，SetPrimaryPartCFrame应该能真正工作
 	if drinkModel:IsA("Model") and drinkModel.PrimaryPart then
-		-- 使用SetPrimaryPartCFrame设置位置
-		local targetCFrame = leftHand.CFrame * handCFrame
-		drinkModel:SetPrimaryPartCFrame(targetCFrame)
+		drinkModel:SetPrimaryPartCFrame(targetWorldCFrame)
 	end
 
-	-- 🔧 修复2：计算正确的焊接偏移，使奶茶正确跟随手的运动
-	-- C1应该是奶茶PrimaryPart相对于自己位置的偏移（通常为单位矩阵）
-	local c1 = drinkPrimaryPart.CFrame:Inverse() * drinkModel.PrimaryPart.CFrame
-
-	-- 🔧 修复4：计算c0时使用桌子上的原始旋转，保持相同的角度
-	-- 获取左手的位置，加上偏移后的位置，再加上原始旋转
-	local offsetPosition = Vector3.new(0, 0, 0)  -- 完全重合手和模型
-	local additionalRotation = CFrame.Angles(math.rad(0), math.rad(90), math.rad(0))  -- Y轴+90度
-	local targetCFrame = leftHand.CFrame * CFrame.new(offsetPosition) * originalRotation * additionalRotation
-	local c0 = leftHand.CFrame:Inverse() * targetCFrame
+	-- C0 = 右手的逆 * 目标世界坐标（这样焊接时会把奶茶放在目标位置）
+	local c0 = rightHand.CFrame:Inverse() * targetWorldCFrame
 
 	-- 创建焊接连接（传入正确的C0和C1参数）
-	local weld = createWeld(leftHand, drinkPrimaryPart, c0, c1)
+	local weld = createWeld(rightHand, drinkPrimaryPart, c0, c1)
+
+	-- 🔧 关键修复：等待一帧让物理引擎更新焊接约束
+	-- 否则焊接的约束可能还没有生效
+	wait(0.01)
 
 	-- 保存状态
 	playerHandDrinks[player] = {
@@ -208,7 +235,6 @@ function DrinkHandManager.attachDrinkToHand(player, drinkModel, drinkIndex, tabl
 		originalPhysicsState = {}
 	}
 
-	print(string.format("[DrinkHandManager] ✅ 成功为玩家 %s 附着奶茶 %d 到左手", player.Name, drinkIndex or 0))
 	return true
 end
 
@@ -225,8 +251,6 @@ function DrinkHandManager.removeDrinkFromHand(player)
 		-- 玩家手中没有奶茶
 		return false
 	end
-
-	print(string.format("[DrinkHandManager] 开始移除玩家 %s 手中的奶茶", player.Name))
 
 	local drinkModel = handDrinkData.model
 	local weld = handDrinkData.weld
@@ -246,7 +270,6 @@ function DrinkHandManager.removeDrinkFromHand(player)
 	-- 清除状态
 	playerHandDrinks[player] = nil
 
-	print(string.format("[DrinkHandManager] ✅ 成功移除玩家 %s 手中的奶茶", player.Name))
 	return true
 end
 
@@ -260,8 +283,6 @@ function DrinkHandManager.destroyHandDrink(player)
 	if not handDrinkData then
 		return false
 	end
-
-	print(string.format("[DrinkHandManager] 销毁玩家 %s 手中的奶茶模型", player.Name))
 
 	-- 先移除焊接
 	DrinkHandManager.removeDrinkFromHand(player)
@@ -309,8 +330,6 @@ function DrinkHandManager.cleanupPlayerHandDrink(player)
 	end
 
 	if playerHandDrinks[player] then
-		print(string.format("[DrinkHandManager] 清理离线玩家 %s 的手中奶茶", player.Name))
-
 		-- 先销毁模型
 		if playerHandDrinks[player].model then
 			pcall(function()

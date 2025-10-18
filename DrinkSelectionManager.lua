@@ -778,10 +778,8 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 	end
 
 	-- 喝饮料动作ID (V1.5)
-	local DRINKING_ANIMATION_ID = "rbxassetid://135940354239870"
+	local DRINKING_ANIMATION_ID = "rbxassetid://71655128068947"
 	local DRINKING_ANIMATION_DURATION = 3.0  -- 动作长度（秒）
-
-	print(string.format("[DrinkSelectionManager] 🥤 开始播放玩家 %s 的喝饮料动作 (奶茶%d)", player.Name, drinkIndex))
 
 	-- 🔧 修复1：获取桌子上对应位置的奶茶模型，而不是玩家自己装备的皮肤
 	-- 根据drinkIndex确定应该复制哪个模型（奇数位置=玩家A的皮肤，偶数位置=玩家B的皮肤）
@@ -967,30 +965,23 @@ function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 		-- 回退：使用原始等待逻辑
 		wait(1)
 	else
-		-- 动作播放成功，等待其完成（3秒）
-		wait(3.5)
+		-- 动作播放成功，等待其完成（根据动画时长3.0秒）
+		wait(3.0)
 	end
 
-	-- 检查是否中毒（使用正确的桌子ID）
+	-- 立刻检查是否中毒（使用正确的桌子ID）
 	local isPoisoned = DrinkManager.isDrinkPoisonedForTable(tableId, drinkIndex)
 	local poisonInfo = DrinkManager.getDrinkPoisonInfoForTable(tableId, drinkIndex)
 
-	-- 调试：打印毒药数据
-	DrinkManager.debugPrintPoisonDataForTable(tableId)
-
-	if #poisonInfo > 0 then
-	else
-	end
-
-	-- 显示结果(传递tableId)
+	-- 立刻显示结果(传递tableId)
 	DrinkSelectionManager.showDrinkingResult(player, drinkIndex, isPoisoned, poisonInfo, tableId)
 
-	-- 判定游戏是否结束
+	-- 立刻判定游戏是否结束
 	if isPoisoned then
 		-- 立即结束游戏
 		DrinkSelectionManager.endGame(player, "poisoned", poisonInfo, tableId)
 	else
-		-- 继续游戏或结束(传递tableId)
+		-- 立即继续游戏或结束(传递tableId)
 		DrinkSelectionManager.continueOrEndGame(player, drinkIndex, tableId)
 	end
 end
@@ -1168,10 +1159,7 @@ function DrinkSelectionManager.continueOrEndGame(player, drinkIndex, tableId)
 	-- 给饮用安全奶茶的玩家奖励金币
 	DrinkSelectionManager.rewardSafeDrinking(player)
 
-	-- 等待结果显示
-	wait(1.5)
-
-	-- 切换到下一个玩家(传递tableId)
+	-- 立刻切换到下一个玩家(传递tableId)
 	DrinkSelectionManager.switchToNextPlayer(tableId)
 end
 
