@@ -910,13 +910,11 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 
 		-- ✅ 修复V3（关键）：销毁原始克隆模型
 		-- 这是资源泄漏的关键修复
-		-- clonedDrinkModel 在 executeDrinking 中被克隆到 workspace
-		-- 用完后需要立即销毁，否则会一直留在 workspace 中
-		if clonedDrinkModel and clonedDrinkModel.Parent then
+		-- clonedDrinkModel 在 executeDrinking 中被克隆，现在需要销毁
+		-- 修复：由于我们不再将克隆体放到 workspace，只需要清理引用即可
+		if clonedDrinkModel then
 			pcall(function()
 				clonedDrinkModel:Destroy()
-				-- 调试日志：可选，用于验证销毁是否执行
-				-- print("✅ 销毁了克隆模型 (饮料 " .. drinkIndex .. ")")
 			end)
 		end
 
@@ -1025,17 +1023,18 @@ function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 		cameraControlEvent:FireClient(selectionState.player2, "focusOnDrinking", {targetPlayer = player.Name})
 	end
 
-	-- 🔧 关键修复：在删除前先克隆桌上的模型！
-	-- 否则 playDrinkingAnimation 里读不到了
+	-- 🔧 关键修复：先克隆桌上的模型，但不要立即放到 Workspace
+	-- 避免在桌子上出现"假杯子"，让玩家看到奶茶立即消失的效果
 	local drinkState = DrinkManager.getTableState(tableId)
 	local drinkModelOnTable = drinkState.activeDrinks[drinkIndex]
 	local clonedDrinkModel = nil
 	if drinkModelOnTable then
 		clonedDrinkModel = DrinkManager.deepCloneModel(drinkModelOnTable)
-		clonedDrinkModel.Parent = workspace
+		-- 修复：不要立即设置 Parent = workspace，避免创建"假杯子"
+		-- clonedDrinkModel.Parent = workspace  -- ❌ 移除这行，避免假杯子
 	end
 
-	-- 先移除桌上的奶茶模型
+	-- 先移除桌上的奶茶模型（这样玩家立即看到奶茶消失）
 	DrinkManager.removeDrinkForTable(tableId, drinkIndex)
 
 	-- V1.5新增: 播放喝饮料动作
