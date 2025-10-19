@@ -12,6 +12,9 @@ local RunService = game:GetService("RunService")
 local FirstPlayerRandom = Random.new()
 local AutoSelectRandom = Random.new()
 
+-- 结果显示时长配置
+local RESULT_DISPLAY_DURATION = 0.5  -- Safe/Poison 文本显示时长（秒）
+
 -- 等待RemoteEvents
 local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
 local drinkSelectionEvent = remoteEventsFolder:WaitForChild("DrinkSelection")
@@ -1054,17 +1057,21 @@ function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 	local isPoisoned = DrinkManager.isDrinkPoisonedForTable(tableId, drinkIndex)
 	local poisonInfo = DrinkManager.getDrinkPoisonInfoForTable(tableId, drinkIndex)
 
-	-- 立刻显示结果(传递tableId)
+	-- 立即显示结果(传递tableId)
 	DrinkSelectionManager.showDrinkingResult(player, drinkIndex, isPoisoned, poisonInfo, tableId)
 
-	-- 立刻判定游戏是否结束
-	if isPoisoned then
-		-- 立即结束游戏
-		DrinkSelectionManager.endGame(player, "poisoned", poisonInfo, tableId)
-	else
-		-- 立即继续游戏或结束(传递tableId)
-		DrinkSelectionManager.continueOrEndGame(player, drinkIndex, tableId)
-	end
+	-- 🔧 修复：延迟执行后续逻辑，让玩家有时间看清 Safe/Poison 文本
+	-- 使用 task.delay 避免阻塞主线程，保持多桌并发性能
+	task.delay(RESULT_DISPLAY_DURATION, function()
+		-- 延迟后判定游戏是否结束
+		if isPoisoned then
+			-- 立即结束游戏
+			DrinkSelectionManager.endGame(player, "poisoned", poisonInfo, tableId)
+		else
+			-- 立即继续游戏或结束(传递tableId)
+			DrinkSelectionManager.continueOrEndGame(player, drinkIndex, tableId)
+		end
+	end)
 end
 
 -- 执行玩家死亡和复活（重构：配合新的服务端主导架构）
