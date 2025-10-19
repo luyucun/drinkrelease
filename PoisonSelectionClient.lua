@@ -98,6 +98,10 @@ function PoisonSelectionClient.showWaitingForOpponent()
 	local confirmTips = confirmUI:FindFirstChild("ConfirmTips")
 
 	if confirmTips then
+		-- 修复：确保容器可见，否则等待文本不会显示
+		confirmTips.Visible = true
+		uiState.selectionActive = true
+
 		local tips = confirmTips:FindFirstChild("Tips")
 		if tips then
 			TypewriterEffect.play(tips, "Waiting for opponent")

@@ -255,7 +255,7 @@ function FreeGiftManager.checkLikeCondition(player)
 		end
 
 		if not hasBadge then
-			return false, "Please earn the required badge first"
+			return false, "Please like the game first to unlock this reward!"
 		end
 
 		return true
@@ -318,40 +318,9 @@ function FreeGiftManager.claimReward(player)
 	-- 获取玩家数据（用于埋点）
 	local playerData = FreeGiftManager.playerDataCache[player]
 
-	-- 第一阶段：检查基础条件（时长 + claimed状态），暂时跳过点赞检查
-	local basicEligible, basicReason = FreeGiftManager.isEligible(player, true) -- skipLikeCheck = true
-	if not basicEligible then
-		-- 📊 埋点：领取失败
-		if _G.FreeGiftAnalytics then
-			_G.FreeGiftAnalytics.logClaimFailure(player, basicReason, {
-				accumulatedSeconds = playerData and playerData.accumulatedSeconds or 0
-			})
-		end
-		return {success = false, message = basicReason}
-	end
-
-	-- 检查当前Badge状态
-	local currentlyHasBadge, _ = FreeGiftManager.checkLikeCondition(player)
-
-	-- 如果玩家还没有徽章，先颁发徽章，然后再进行完整验证
-	local shouldAwardBadge = false
-	if not currentlyHasBadge and CONFIG.LIKE_BADGE_ID ~= 0 then
-		shouldAwardBadge = true
-
-		-- 颁发徽章
-		local badgeSuccess, badgeError = pcall(function()
-			BadgeService:AwardBadge(player.UserId, CONFIG.LIKE_BADGE_ID)
-		end)
-
-		if not badgeSuccess then
-			warn("⚠️ FreeGiftManager: Failed to award like badge to " .. player.Name .. ": " .. tostring(badgeError))
-			return {success = false, message = "Failed to verify like status, please try again"}
-		else
-			print("✅ FreeGiftManager: Like badge awarded to " .. player.Name)
-		end
-	end
-
-	-- 第二阶段：进行完整条件验证（包括点赞检查）
+	-- 检查完整条件（时长 + claimed状态 + 点赞验证）
+	-- 修复P1：移除自动徽章发放逻辑，确保徽章发放数与实际点赞数一致
+	-- 徽章应该是玩家点赞游戏的证明，而不是领取奖励的附带效果
 	local fullEligible, fullReason = FreeGiftManager.isEligible(player, false) -- skipLikeCheck = false
 	if not fullEligible then
 		-- 📊 埋点：领取失败
@@ -421,8 +390,7 @@ function FreeGiftManager.claimReward(player)
 	if _G.FreeGiftAnalytics then
 		_G.FreeGiftAnalytics.logClaimSuccess(player, {
 			accumulatedSeconds = playerData.accumulatedSeconds,
-			hasBadge = true, -- 此时应该已经有徽章了
-			badgeAwarded = shouldAwardBadge -- 记录是否在本次领取中颁发了徽章
+			hasBadge = true -- 此时应该已经有徽章了（来自玩家的真实点赞行为）
 		})
 	end
 
@@ -452,14 +420,12 @@ function FreeGiftManager.getProgress(player)
 		}
 	end
 
-	-- 对于进度查询，我们使用基础条件检查（时长 + claimed状态）
-	-- 这样玩家满足时长条件就能看到Claim按钮，即使还没有徽章
-	local basicEligible, basicReason = FreeGiftManager.isEligible(player, true) -- 跳过点赞检查
-	local fullEligible, fullReason = FreeGiftManager.isEligible(player, false) -- 完整检查
+	-- 修复P1：进度查询应该进行完整条件检查（时长 + 点赞验证）
+	-- 只有同时满足这两个条件，玩家才能看到Claim按钮
+	local eligibleForClaim, eligibilityReason = FreeGiftManager.isEligible(player, false) -- 完整检查，包括点赞
 
-	-- canClaim显示基础条件，message显示完整检查结果
-	local canClaim = basicEligible
-	local message = fullEligible and fullReason or basicReason
+	local canClaim = eligibleForClaim
+	local message = eligibilityReason
 
 	return {
 		seconds = playerData.accumulatedSeconds,

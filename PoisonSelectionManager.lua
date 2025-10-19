@@ -181,14 +181,11 @@ function PoisonSelectionManager.startPoisonPhaseCountdown(tableId, player1, play
 		return false
 	end
 
-	print("PoisonSelectionManager: 毒药阶段倒计时已启动 - 桌子: " .. tableId)
 	return true
 end
 
 -- 毒药阶段倒计时超时处理
 function PoisonSelectionManager.onPoisonPhaseTimeout(tableId)
-	print("PoisonSelectionManager: 毒药阶段倒计时超时 - 桌子: " .. tableId)
-
 	local poisonState = getPoisonState(tableId)
 	if not poisonState or not poisonState.activePhase then
 		return
@@ -218,8 +215,6 @@ end
 
 -- 为玩家自动选择毒药
 function PoisonSelectionManager.autoSelectForPlayer(tableId, player)
-	print("PoisonSelectionManager: 自动选择毒药 - 玩家: " .. player.Name .. ", 桌子: " .. tableId)
-
 	-- 获取该桌子的状态
 	local poisonState = getPoisonState(tableId)
 	if not poisonState then
@@ -262,8 +257,6 @@ function PoisonSelectionManager.autoSelectForPlayer(tableId, player)
 
 	-- 直接执行"No"选择的流程（不购买道具，直接注入毒药）
 	PoisonSelectionManager.startPoisonInjectionEffect(player, randomDrinkIndex, tableId)
-
-	print("PoisonSelectionManager: 已为玩家 " .. player.Name .. " 自动选择奶茶 " .. randomDrinkIndex .. " (可选: " .. #availableIndexes .. "个)")
 end
 
 -- 毒药阶段倒计时更新
@@ -274,7 +267,6 @@ end
 
 -- 毒药阶段进入警告阶段
 function PoisonSelectionManager.onPoisonPhaseWarning(tableId, remainingTime)
-	print("PoisonSelectionManager: 毒药阶段进入警告阶段 - 桌子: " .. tableId .. ", 剩余: " .. string.format("%.1f", remainingTime) .. "秒")
 	-- 警告阶段的处理（如字体变红）由客户端CountdownClient处理
 end
 
@@ -282,7 +274,6 @@ end
 function PoisonSelectionManager.stopPoisonPhaseCountdown(tableId)
 	if CountdownManager and CountdownManager.stopCountdown then
 		CountdownManager.stopCountdown(tableId)
-		print("PoisonSelectionManager: 毒药阶段倒计时已停止 - 桌子: " .. tableId)
 	end
 end
 
@@ -533,7 +524,11 @@ function PoisonSelectionManager.completePoisonInjection(player, drinkIndex, tabl
 		poisonedDrinks = poisonState.playerPoisonList[player]
 	})
 
-	-- 检查是否所有玩家都完成选择
+	-- 修复：在特效播放完成后，重新检查并显示等待状态
+	-- 这样确保不论是否购买道具，都能正确显示等待文本
+	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
+
+	-- 检查是否所有玩家都完成选择，只在双方都完成时才隐藏UI
 	PoisonSelectionManager.checkAllPlayersCompleted(tableId)
 end
 
@@ -544,7 +539,6 @@ function PoisonSelectionManager.offerDeveloperProduct(player, drinkIndex, tableI
 	local poisonState = getPoisonState(tableId)
 	if poisonState then
 		poisonState.awaitingReceipt[player] = true
-		print("PoisonSelectionManager: 玩家 " .. player.Name .. " 进入购买流程，标记为等待收据")
 	end
 
 	-- 提示购买道具
@@ -572,12 +566,10 @@ function PoisonSelectionManager.offerDeveloperProduct(player, drinkIndex, tableI
 				-- 🔧 修复：修正时间检查逻辑，等待15秒后检查是否已过期15秒
 				-- 避免竞态条件：如果已经等待了15秒，那么检查是否真的超过15秒
 				context.expired = true
-				print("⏰ 购买上下文过期标记: 玩家 " .. player.Name)
 
 				-- 🔧 新增：清除等待标记，允许正常的超时流程处理
 				if poisonState then
 					poisonState.awaitingReceipt[player] = nil
-					print("PoisonSelectionManager: 玩家 " .. player.Name .. " 购买流程超时，清除等待标记")
 				end
 				-- 注意：不再自动调用continueNormalFlow，让ProcessReceipt统一处理
 			end
@@ -776,10 +768,11 @@ function PoisonSelectionManager.completePurchaseSelection(player, tableId)
 	spawn(function()
 		wait(2)
 
-		-- 隐藏所有相关UI
-		poisonSelectionEvent:FireClient(player, "hideAll")
+		-- 修复：只隐藏确认弹框，保持 ConfirmTips 显示等待文本
+		poisonSelectionEvent:FireClient(player, "hideConfirmation")
 
-		-- 检查是否所有玩家都完成选择
+		-- 修复：不再过早隐藏UI，只检查是否所有玩家都完成选择
+		-- 只有在双方都完成时，checkAllPlayersCompleted 才会隐藏UI并进入下一阶段
 		PoisonSelectionManager.checkAllPlayersCompleted(tableId)
 	end)
 end
@@ -829,10 +822,11 @@ function PoisonSelectionManager.continueNormalFlow(player, drinkIndex, tableId)
 	-- 立即检查并显示等待状态
 	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
 
-	-- 隐藏确认弹框和选择UI
-	poisonSelectionEvent:FireClient(player, "hideAll")
+	-- 修复：只隐藏确认弹框，不隐藏 ConfirmTips，保持等待文本显示
+	poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	-- 注释掉：PoisonSelectionManager.hideSelectionUI(player) -- 这会隐藏 ConfirmTips，导致等待文本消失
 
-	-- 检查是否所有玩家都完成选择
+	-- 检查是否所有玩家都完成选择，只在双方都完成时才隐藏等待UI
 	PoisonSelectionManager.checkAllPlayersCompleted(tableId)
 end
 
@@ -881,6 +875,14 @@ function PoisonSelectionManager.finishPoisonPhase(tableId)
 
 
 	poisonState.activePhase = false
+
+	-- 修复：在双方都完成且进入下一阶段时，才隐藏所有毒药选择相关的UI
+	if poisonState.player1 and poisonState.player1.Parent then
+		poisonSelectionEvent:FireClient(poisonState.player1, "hideAll")
+	end
+	if poisonState.player2 and poisonState.player2.Parent then
+		poisonSelectionEvent:FireClient(poisonState.player2, "hideAll")
+	end
 
 	-- 显示道具界面给双方玩家（只给该桌子玩家）
 	PoisonSelectionManager.showPropsUIForPlayers(poisonState.player1, poisonState.player2)
@@ -1011,8 +1013,6 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 	-- UnifiedPurchaseManager已经在调用前验证了商品ID，此处再次验证是冗余的
 	-- 这个冗余验证可能导致正确的商品返回false，进而导致NotProcessedYet
 
-	print("☠️ PoisonSelectionManager: 处理额外毒药购买成功 - " .. player.Name .. " (ProductId: " .. productId .. ")")
-
 	-- 🔧 修复：优雅降级处理，即使没有购买上下文也能安全处理
 	local context = nil
 	if _G.PoisonSelectionPurchaseContext and _G.PoisonSelectionPurchaseContext[player] then
@@ -1021,9 +1021,7 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 		_G.PoisonSelectionPurchaseContext[player] = nil
 
 		if context.expired then
-			print("⏰ 购买上下文已过期，但仍尝试使用其数据")
-		else
-			print("✅ 找到购买上下文，使用正常流程")
+			-- 上下文已过期，但仍尝试使用其数据
 		end
 	else
 		warn("⚠️ PoisonSelectionManager: 未找到购买上下文，使用降级处理")
@@ -1031,8 +1029,6 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 
 	-- 方案A：有上下文时使用正常流程（即使过期也尝试使用）
 	if context and context.drinkIndex and context.tableId then
-		print("🎯 使用上下文信息: drinkIndex=" .. context.drinkIndex .. ", tableId=" .. context.tableId)
-
 		-- 验证上下文信息的有效性
 		local tableId = context.tableId
 		local poisonState = getPoisonState(tableId)
@@ -1040,21 +1036,16 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 		-- 🔧 修复：清除等待标记，允许该玩家的自动选择流程（如果后续需要）
 		if poisonState then
 			poisonState.awaitingReceipt[player] = nil
-			print("PoisonSelectionManager: 玩家 " .. player.Name .. " 购买成功，清除等待标记")
 		end
 
 		-- 即使上下文过期，如果玩家仍在毒药选择阶段且数据有效，就执行正常流程
 		if poisonState and poisonState.activePhase and (poisonState.player1 == player or poisonState.player2 == player) then
 			PoisonSelectionManager.handleExtraPoisonPurchase(player, context.drinkIndex, tableId)
 			return true
-		else
-			print("⚠️ 上下文数据无效或玩家不在毒药选择阶段，继续降级处理")
 		end
 	end
 
 	-- 方案B：无上下文或上下文无效时的降级处理
-	print("🆘 执行降级处理：检查玩家是否在毒药选择阶段")
-
 	-- 尝试检测玩家当前所在的桌子和状态
 	local tableId = getTableIdFromPlayer(player)
 	if tableId then
@@ -1063,14 +1054,12 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 		-- 🔧 修复：清除等待标记
 		if poisonState then
 			poisonState.awaitingReceipt[player] = nil
-			print("PoisonSelectionManager: 玩家 " .. player.Name .. " 购买成功（降级处理），清除等待标记")
 		end
 
 		if poisonState and poisonState.activePhase then
 			-- 玩家确实在毒药选择阶段
 			local currentSelection = poisonState.playerSelections[player]
 			if currentSelection then
-				print("🔄 降级处理成功: 使用当前选择 drinkIndex=" .. currentSelection .. ", tableId=" .. tableId)
 				PoisonSelectionManager.handleExtraPoisonPurchase(player, currentSelection, tableId)
 				return true
 			end
@@ -1078,7 +1067,6 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 	end
 
 	-- 方案C：完全无法确定状态时的最终降级
-	print("💰 最终降级处理：发放等价补偿")
 
 	-- 🔧 关键修复：补偿必须成功，否则返回NotProcessedYet让Roblox重试
 	local compensationSuccess = false
@@ -1089,7 +1077,6 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 		local compensationCoins = 50 -- 保守的补偿金币数量
 		local success = _G.CoinManager.addCoins(player, compensationCoins, "额外毒药购买补偿")
 		if success then
-			print("💎 补偿成功: 玩家 " .. player.Name .. " 获得 " .. compensationCoins .. " 金币补偿")
 			compensationSuccess = true
 
 			-- 通知玩家
@@ -1118,12 +1105,10 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 
 	-- 如果金币补偿失败，尝试道具补偿
 	if not compensationSuccess then
-		print("🎁 尝试备用补偿：发放道具")
 		if _G.PropManager and _G.PropManager.addProp then
 			-- 发放一个验证道具作为补偿
 			local success = _G.PropManager.addProp(player, 1, 1, "额外毒药购买道具补偿")
 			if success then
-				print("🔧 备用补偿成功: 玩家 " .. player.Name .. " 获得1个验证道具")
 				compensationSuccess = true
 			else
 				warn("❌ 道具补偿也失败")
@@ -1137,7 +1122,6 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 	if not compensationSuccess then
 		warn("🚨 所有补偿方案都失败，返回false要求Roblox重试")
 		-- 记录到日志供后续人工处理
-		print("📋 需要重试的购买记录: 玩家=" .. player.Name .. ", 商品ID=" .. productId .. ", 时间=" .. os.date())
 		return false  -- 让Roblox重试，不要标记为PurchaseGranted
 	end
 
@@ -1167,8 +1151,6 @@ task.spawn(function()
 	end
 
 	if _G.UnifiedPurchaseManager and _G.UnifiedPurchaseManager.registerHandler then
-		print("✅ PoisonSelectionManager: 检测到UnifiedPurchaseManager，主动注册毒药商品处理器")
-
 		_G.UnifiedPurchaseManager.registerHandler("poison_extra", function(receiptInfo, player)
 			-- 处理额外毒药商品 (ProductId: 3416569819)
 			if receiptInfo.ProductId == DEVELOPER_PRODUCT_ID then
