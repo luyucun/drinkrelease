@@ -273,14 +273,18 @@ function DrinkManager.createSingleDrink(tableId, classicTable, index, attachment
 	local orientation = getDrinkOrientation(sourceModel.Name)
 
 	-- 计算奶茶位置和朝向
-	-- 直接使用attachment的位置，但使用配置中的绝对旋转角度
-	local position = attachment.WorldPosition + Vector3.new(0, orientation.heightOffset, 0)
-	local finalRotation = CFrame.Angles(
+	-- 正确的方式：使用attachment的WorldCFrame作为基准，在其本地坐标系中应用旋转
+	local baseCFrame = attachment.WorldCFrame
+	local orientationCF = CFrame.Angles(
 		math.rad(orientation.rotationX),  -- 将角度转换为弧度
 		math.rad(orientation.rotationY),
 		math.rad(orientation.rotationZ)
 	)
-	local finalCFrame = CFrame.new(position) * finalRotation
+	-- 在attachment的本地坐标系中应用旋转，然后处理高度偏移
+	local finalCFrame = baseCFrame * orientationCF
+	if orientation.heightOffset ~= 0 then
+		finalCFrame = finalCFrame + (finalCFrame.UpVector * orientation.heightOffset)
+	end
 
 	-- 设置模型位置
 	if drinkModel.PrimaryPart then
