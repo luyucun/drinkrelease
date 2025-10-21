@@ -8,6 +8,15 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+-- 🔧 关键修复：检查是否为真实玩家（排除 NPC 伪对象）
+local function isRealPlayer(player)
+	if not player then return false end
+	if typeof(player) ~= "Instance" then return false end
+	if not player:IsA("Player") then return false end
+	if not player.Parent then return false end
+	return true
+end
+
 -- 等待RemoteEvents文件夹
 local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
 
@@ -60,6 +69,12 @@ end
 
 -- 开始死亡流程（重构：服务端主导，固定时长，不依赖客户端响应）
 function DeathEffectManager.startDeathSequence(player)
+	-- 🔧 关键修复：检查是否为真实玩家，NPC 伪对象无需死亡流程
+	if not isRealPlayer(player) then
+		-- NPC 或无效对象，直接返回失败
+		return false
+	end
+
 	if not player or not player.Character then
 		warn("DeathEffectManager.startDeathSequence: 玩家或角色不存在")
 		return false
@@ -144,6 +159,12 @@ end
 
 -- 执行服务端主导的死亡流程（新增：核心重构逻辑）
 function DeathEffectManager.executeServerDrivenDeathFlow(player, playerState)
+	-- 🔧 关键修复：检查是否为真实玩家，NPC 伪对象无需死亡流程
+	if not isRealPlayer(player) then
+		-- NPC 或无效对象，直接跳过
+		return
+	end
+
 	-- 等待固定的死亡展示时间
 	wait(DEATH_CONFIG.DEATH_DISPLAY_TIME)
 
@@ -177,6 +198,12 @@ end
 
 -- 复活玩家（重构：增强错误处理，确保流程可靠性）
 function DeathEffectManager.respawnPlayer(player)
+	-- 🔧 关键修复：检查是否为真实玩家，NPC 伪对象没有 Roblox 事件接口
+	if not isRealPlayer(player) then
+		-- NPC 或无效对象，直接跳过，无需死亡复活流程
+		return
+	end
+
 	local playerState = deathStates[player]
 	if not playerState then
 		warn("DeathEffectManager.respawnPlayer: 玩家 " .. (player and player.Name or "未知") .. " 状态不存在")

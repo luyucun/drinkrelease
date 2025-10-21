@@ -175,13 +175,24 @@ function CameraController.enterSelectPhase(tableData)
 	CameraController.moveCameraTo(targetCFrame)
 end
 
--- 镜头聚焦到指定玩家
--- 支持新参数格式：targetPlayer, duration, tableData (可选)
-function CameraController.focusOnPlayer(targetPlayer, duration, tableData)
-	if not targetPlayer or not targetPlayer.Character then return end
+-- 镜头聚焦到指定NPC或玩家
+-- 支持新参数格式：targetPlayer, duration, npcData (可选)
+-- npcData 可以包含 {character: Model, position: Vector3}
+function CameraController.focusOnPlayer(targetPlayer, duration, npcData)
+	-- 🔧 修复V1.6: 支持NPC模型（非Player实例）
+	local character = nil
+	local humanoidRootPart = nil
 
-	local character = targetPlayer.Character
-	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	-- 如果是真实玩家
+	if targetPlayer and targetPlayer.Character then
+		character = targetPlayer.Character
+		humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	-- 如果是NPC数据（表）
+	elseif npcData and npcData.character then
+		character = npcData.character
+		humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	end
+
 	if not humanoidRootPart then return end
 
 	-- 获取表数据用于判断玩家位置
@@ -189,9 +200,9 @@ function CameraController.focusOnPlayer(targetPlayer, duration, tableData)
 	local tableCFrame
 	local tablePosition
 
-	if tableData and tableData.cframe then
-		tableCFrame = tableData.cframe
-		tablePosition = tableData.position or tableData.cframe.Position
+	if npcData and npcData.cframe then
+		tableCFrame = npcData.cframe
+		tablePosition = npcData.position or npcData.cframe.Position
 	else
 		-- 尝试从本地获取表的CFrame
 		tableCFrame = CameraController.getTableCFrame()
@@ -392,6 +403,24 @@ local function setupRemoteEvents()
 				tableData = {}
 			end
 
+			-- 🔧 修复：从cframeValues重建CFrame对象
+			if tableData.cframeValues then
+				-- cframeValues是一个table，包含CFrame的所有组件
+				-- 格式：{x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22}
+				if #tableData.cframeValues >= 12 then
+					tableData.cframe = CFrame.new(
+						tableData.cframeValues[1], tableData.cframeValues[2], tableData.cframeValues[3],
+						tableData.cframeValues[4], tableData.cframeValues[5], tableData.cframeValues[6],
+						tableData.cframeValues[7], tableData.cframeValues[8], tableData.cframeValues[9],
+						tableData.cframeValues[10], tableData.cframeValues[11], tableData.cframeValues[12]
+					)
+					-- position可能以{x,y,z}格式发送，需要转换为Vector3
+					if tableData.position and type(tableData.position) == "table" then
+						tableData.position = Vector3.new(tableData.position.x, tableData.position.y, tableData.position.z)
+					end
+				end
+			end
+
 			-- 如果没有tableCFrame，尝试本地获取
 			if not tableData.cframe or not tableData.cframe.Position then
 				-- 从本地查询表的CFrame
@@ -401,7 +430,12 @@ local function setupRemoteEvents()
 					tableData.position = localTableCFrame.Position
 				else
 					-- 降级：仅使用Position
-					tableData.position = data.tablePosition or (tableData.position)
+					local pos = data.tablePosition
+					if pos and type(pos) == "table" then
+						tableData.position = Vector3.new(pos.x, pos.y, pos.z)
+					else
+						tableData.position = pos
+					end
 					if not tableData.position then
 						warn("CameraController: 无法获取表数据，镜头控制失效")
 						return
@@ -424,12 +458,20 @@ local function setupRemoteEvents()
 			elseif action == "watchOther" then
 				CameraController.enterSelectPhase(tableData)
 			elseif action == "focusOnDrinking" then
+				-- 🔧 修复V1.6: 支持NPC镜头定位
+				-- 首先尝试作为真实玩家查找
 				if data and data.targetPlayer then
 					local targetPlayer = Players:FindFirstChild(data.targetPlayer)
 					if targetPlayer then
 						CameraController.focusOnPlayer(targetPlayer, 3, tableData)
 					else
-						warn("CameraController: 未找到目标玩家: " .. tostring(data.targetPlayer))
+						-- 如果找不到真实玩家，尝试作为NPC模型处理
+						-- NPC模型会通过 npcCharacterModel 传递
+						if data.npcCharacterModel then
+							CameraController.focusOnPlayer(nil, 3, {character = data.npcCharacterModel})
+						else
+							warn("CameraController: 未找到目标玩家或NPC: " .. tostring(data.targetPlayer))
+						end
 					end
 				else
 					warn("CameraController: focusOnDrinking缺少目标玩家数据")

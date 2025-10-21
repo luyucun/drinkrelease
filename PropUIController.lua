@@ -316,6 +316,16 @@ function PropUIController.initialize()
 	-- 额外等待确保UI完全复制
 	wait(3)
 
+	-- 🔧 V1.6: 教程模式检查，禁用道具UI
+	if _G.TutorialMode then
+		print("[PropUIController] 教程模式，禁用道具UI")
+		local propsGui = getPropUI()
+		if propsGui then
+			propsGui.Enabled = false
+		end
+		return
+	end
+
 	-- 检查UI是否存在
 	if not PropUIController.checkUIExists() then
 		warn("道具UI初始化失败，请检查StarterGui设置")

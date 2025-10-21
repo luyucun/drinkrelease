@@ -348,6 +348,12 @@ end
 function CoinManager.rewardSafeDrinking(player)
 	if not player then return false end
 
+	-- 🔧 V1.6: 教程模式中不发放金币
+	if _G.TutorialMode then
+		print("[CoinManager] 教程模式，跳过安全饮用奖励")
+		return true  -- 返回true表示处理成功，但不发放金币
+	end
+
 	return CoinManager.addCoins(player, CONFIG.SAFE_DRINK_REWARD, "安全饮用奶茶")
 end
 

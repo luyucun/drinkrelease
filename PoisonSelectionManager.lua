@@ -13,6 +13,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PoisonRandom = Random.new()
 local ExtraPoisonRandom = Random.new()
 
+-- 🔧 修复：辅助函数 - 检查是否是真实的 Roblox Player 对象（排除 NPC）
+local function isRealPlayer(player)
+	if not player then return false end
+	if typeof(player) ~= "Instance" then return false end
+	if not player:IsA("Player") then return false end
+	if not player.Parent then return false end
+	return true
+end
+
 -- 引入其他管理器（避免循环依赖，延迟加载）
 local DrinkManager = nil
 local DrinkSelectionManager = nil
@@ -90,6 +99,7 @@ local function createNewPoisonState()
 		playerPoisonList = {},
 		extraPoisonTargets = {},
 		startTime = 0,
+		realPlayers = {},  -- 🔧 V1.6修复：仅包含真实玩家的列表，用于倒计时
 	}
 end
 
@@ -167,12 +177,16 @@ function PoisonSelectionManager.startPoisonPhaseCountdown(tableId, player1, play
 		}
 	}
 
+	-- 🔧 V1.6修复：获取仅真实玩家的列表
+	local poisonState = getPoisonState(tableId)
+	local playersForCountdown = poisonState and poisonState.realPlayers or {player1, player2}
+
 	-- 启动倒计时
 	local success = CountdownManager.startCountdown(
 		tableId,
 		countdownTypes.POISON_PHASE,
 		config.POISON_PHASE_DURATION,
-		{player1, player2},
+		playersForCountdown,
 		options
 	)
 
@@ -335,9 +349,76 @@ function PoisonSelectionManager.startPoisonPhase(player1, player2)
 	poisonState.extraPoisonTargets = {}
 	poisonState.startTime = tick()
 
+	-- 🔧 V1.6修复：建立仅包含真实玩家的列表（用于倒计时RemoteEvent）
+	poisonState.realPlayers = {}
+	if isRealPlayer(player1) then
+		table.insert(poisonState.realPlayers, player1)
+	end
+	if isRealPlayer(player2) then
+		table.insert(poisonState.realPlayers, player2)
+	end
+
 	-- 重置道具使用状态（针对该桌子）
 	if _G.PropEffectHandler and _G.PropEffectHandler.resetTableState then
 		_G.PropEffectHandler.resetTableState(tableId)
+	end
+
+	-- 🆕 检查是否为教程模式
+	local gameInstance = nil
+	if _G.TableManager then
+		gameInstance = _G.TableManager.getTableInstance(tableId)
+	end
+
+	if gameInstance and gameInstance.isTutorial then
+		-- 🔧 CRITICAL FIX: 教程模式应该让真实玩家体验UI，只有NPC自动选择
+		print("[PoisonSelectionManager] 教程模式，真实玩家将体验UI，NPC自动选择")
+
+		-- 🔧 修复：分别处理真实玩家和NPC
+		local realPlayer = nil
+		local npcPlayer = nil
+
+		-- 识别哪个是真实玩家，哪个是NPC
+		if _G.TutorialBotService and _G.TutorialBotService:isBot(player1) then
+			npcPlayer = player1
+			realPlayer = player2
+		elseif _G.TutorialBotService and _G.TutorialBotService:isBot(player2) then
+			npcPlayer = player2
+			realPlayer = player1
+		else
+			warn("[PoisonSelectionManager] 教程模式：无法识别NPC玩家，退回到正常UI模式")
+			-- 退回到正常模式处理
+			PoisonSelectionManager.startPoisonPhaseCountdown(tableId, player1, player2)
+			PoisonSelectionManager.showSelectionUI(player1)
+			PoisonSelectionManager.showSelectionUI(player2)
+			return true
+		end
+
+		-- 🔧 修复：只为NPC自动选择，真实玩家使用正常UI流程
+		if npcPlayer then
+			print("[PoisonSelectionManager] NPC自动选择毒药")
+			_G.TutorialBotService:scheduleBotPoisonDecision(function(choice)
+				poisonState.playerSelections[npcPlayer] = choice
+				poisonState.completedPlayers[npcPlayer] = true
+				print("[PoisonSelectionManager] NPC选择毒药: " .. choice)
+
+				-- 检查是否两个玩家都已完成
+				if poisonState.completedPlayers[realPlayer] and poisonState.completedPlayers[npcPlayer] then
+					print("[PoisonSelectionManager] 教程毒药阶段完成，进入下一阶段")
+					PoisonSelectionManager.finishPoisonPhase(tableId)
+				end
+			end)
+		end
+
+		-- 🔧 修复：为真实玩家启动正常的UI流程和倒计时
+		if realPlayer then
+			print("[PoisonSelectionManager] 为真实玩家启动毒药选择UI")
+			-- V1.4: 启动毒药阶段倒计时
+			PoisonSelectionManager.startPoisonPhaseCountdown(tableId, realPlayer, npcPlayer)
+			-- 为真实玩家显示选择UI
+			PoisonSelectionManager.showSelectionUI(realPlayer)
+		end
+
+		return true
 	end
 
 	-- V1.4: 启动毒药阶段倒计时
@@ -352,7 +433,7 @@ end
 
 -- 显示选择UI
 function PoisonSelectionManager.showSelectionUI(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	-- 通过RemoteEvent通知客户端显示UI
 	poisonSelectionEvent:FireClient(player, "showSelectionUI")
@@ -360,7 +441,7 @@ end
 
 -- 隐藏选择UI
 function PoisonSelectionManager.hideSelectionUI(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	-- 通过RemoteEvent通知客户端隐藏UI
 	poisonSelectionEvent:FireClient(player, "hideSelectionUI")
@@ -396,9 +477,11 @@ function PoisonSelectionManager.onPlayerSelectDrink(player, drinkIndex)
 	poisonState.playerSelections[player] = drinkIndex
 
 	-- 显示毒药预览（只显示当前选择的奶茶为红色）
-	poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
-		poisonedDrinks = {drinkIndex}
-	})
+	if isRealPlayer(player) then
+		poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
+			poisonedDrinks = {drinkIndex}
+		})
+	end
 
 	-- 显示确认弹框（仅用于道具购买选择）
 	PoisonSelectionManager.showConfirmationDialog(player, drinkIndex)
@@ -406,8 +489,21 @@ end
 
 -- 显示确认弹框
 function PoisonSelectionManager.showConfirmationDialog(player, drinkIndex)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
+	-- 🔧 修复V1.6: 教程模式下跳过显示确认弹框
+	local tableId = getTableIdFromPlayer(player)
+	if tableId then
+		local gameInstance = _G.TableManager and _G.TableManager.getTableInstance(tableId)
+		if gameInstance and gameInstance.isTutorial then
+			-- 教程模式下直接跳过确认，执行毒药注入
+			print("[PoisonSelectionManager] 教程模式：跳过确认弹框，直接执行毒药注入")
+			PoisonSelectionManager.startPoisonInjectionEffect(player, drinkIndex, tableId)
+			return
+		end
+	end
+
+	-- 正常模式：显示确认弹框
 	-- 通过RemoteEvent通知客户端显示确认弹框
 	poisonSelectionEvent:FireClient(player, "showConfirmation", {drinkIndex = drinkIndex})
 end
@@ -467,15 +563,19 @@ function PoisonSelectionManager.startPoisonInjectionEffect(player, drinkIndex, t
 	poisonState.completedPlayers[player] = true
 
 	-- 隐藏确认弹框
-	poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	if isRealPlayer(player) then
+		poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	end
 
 	-- 立即检查并显示等待状态
 	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
 
 	-- 通知客户端开始视觉效果（只对注入毒药的玩家显示）
-	poisonSelectionEvent:FireClient(player, "startPoisonEffect", {
-		drinkIndex = drinkIndex
-	})
+	if isRealPlayer(player) then
+		poisonSelectionEvent:FireClient(player, "startPoisonEffect", {
+			drinkIndex = drinkIndex
+		})
+	end
 
 	-- 等待2秒让效果播放完成
 	spawn(function()
@@ -520,9 +620,11 @@ function PoisonSelectionManager.completePoisonInjection(player, drinkIndex, tabl
 	table.insert(poisonState.playerPoisonList[player], drinkIndex)
 
 	-- 更新毒药标识显示（现在显示真正注入的毒药）
-	poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
-		poisonedDrinks = poisonState.playerPoisonList[player]
-	})
+	if isRealPlayer(player) then
+		poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
+			poisonedDrinks = poisonState.playerPoisonList[player]
+		})
+	end
 
 	-- 修复：在特效播放完成后，重新检查并显示等待状态
 	-- 这样确保不论是否购买道具，都能正确显示等待文本
@@ -581,7 +683,9 @@ end
 function PoisonSelectionManager.handleExtraPoisonPurchase(player, originalDrinkIndex, tableId)
 
 	-- 隐藏确认弹框
-	poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	if isRealPlayer(player) then
+		poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	end
 
 	-- 获取所有可选的奶茶（1-24，排除玩家已选择的）
 	local availableDrinks = {}
@@ -706,6 +810,8 @@ end
 
 -- V1.7: 显示双毒药视觉效果（只有购买者能看到）
 function PoisonSelectionManager.showDualPoisonEffects(player, originalDrinkIndex, randomDrinkIndex, poisonState)
+	if not isRealPlayer(player) then return end
+
 	-- 同时显示两个奶茶的毒药注入效果
 	poisonSelectionEvent:FireClient(player, "startPoisonEffect", {
 		drinkIndex = originalDrinkIndex
@@ -723,6 +829,8 @@ end
 
 -- V1.7: 显示单毒药视觉效果
 function PoisonSelectionManager.showSinglePoisonEffect(player, drinkIndex, poisonState)
+	if not isRealPlayer(player) then return end
+
 	poisonSelectionEvent:FireClient(player, "startPoisonEffect", {
 		drinkIndex = drinkIndex
 	})
@@ -744,7 +852,9 @@ function PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
 	local otherPlayer = (player == poisonState.player1) and poisonState.player2 or poisonState.player1
 	if otherPlayer and not poisonState.completedPlayers[otherPlayer] then
 		-- 显示"Waiting for opponent"
-		poisonSelectionEvent:FireClient(player, "showWaitingForOpponent")
+		if isRealPlayer(player) then
+			poisonSelectionEvent:FireClient(player, "showWaitingForOpponent")
+		end
 	end
 end
 
@@ -769,7 +879,9 @@ function PoisonSelectionManager.completePurchaseSelection(player, tableId)
 		wait(2)
 
 		-- 修复：只隐藏确认弹框，保持 ConfirmTips 显示等待文本
-		poisonSelectionEvent:FireClient(player, "hideConfirmation")
+		if isRealPlayer(player) then
+			poisonSelectionEvent:FireClient(player, "hideConfirmation")
+		end
 
 		-- 修复：不再过早隐藏UI，只检查是否所有玩家都完成选择
 		-- 只有在双方都完成时，checkAllPlayersCompleted 才会隐藏UI并进入下一阶段
@@ -811,9 +923,11 @@ function PoisonSelectionManager.continueNormalFlow(player, drinkIndex, tableId)
 	table.insert(poisonState.playerPoisonList[player], drinkIndex)
 
 	-- 更新毒药标识显示（现在显示真正注入的毒药）
-	poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
-		poisonedDrinks = poisonState.playerPoisonList[player]
-	})
+	if isRealPlayer(player) then
+		poisonIndicatorEvent:FireClient(player, "showPoisonIndicators", {
+			poisonedDrinks = poisonState.playerPoisonList[player]
+		})
+	end
 
 	-- 记录最终选择
 	poisonState.playerConfirmations[player] = true
@@ -823,7 +937,9 @@ function PoisonSelectionManager.continueNormalFlow(player, drinkIndex, tableId)
 	PoisonSelectionManager.checkAndShowWaitingState(player, tableId)
 
 	-- 修复：只隐藏确认弹框，不隐藏 ConfirmTips，保持等待文本显示
-	poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	if isRealPlayer(player) then
+		poisonSelectionEvent:FireClient(player, "hideConfirmation")
+	end
 	-- 注释掉：PoisonSelectionManager.hideSelectionUI(player) -- 这会隐藏 ConfirmTips，导致等待文本消失
 
 	-- 检查是否所有玩家都完成选择，只在双方都完成时才隐藏等待UI
@@ -877,15 +993,80 @@ function PoisonSelectionManager.finishPoisonPhase(tableId)
 	poisonState.activePhase = false
 
 	-- 修复：在双方都完成且进入下一阶段时，才隐藏所有毒药选择相关的UI
-	if poisonState.player1 and poisonState.player1.Parent then
+	-- 🔧 修复：只向真实玩家发送 FireClient，排除 NPC
+	if isRealPlayer(poisonState.player1) then
 		poisonSelectionEvent:FireClient(poisonState.player1, "hideAll")
 	end
-	if poisonState.player2 and poisonState.player2.Parent then
+	if isRealPlayer(poisonState.player2) then
 		poisonSelectionEvent:FireClient(poisonState.player2, "hideAll")
 	end
 
-	-- 显示道具界面给双方玩家（只给该桌子玩家）
-	PoisonSelectionManager.showPropsUIForPlayers(poisonState.player1, poisonState.player2)
+	-- 🔧 修复V1.6: 教程模式下跳过显示Props面板
+	local gameInstance = nil
+	if _G.TableManager then
+		gameInstance = _G.TableManager.getTableInstance(tableId)
+	end
+
+	-- 🔧 V1.6修复: 教程模式下为真实玩家补齐镜头和提示
+	if gameInstance and gameInstance.isTutorial then
+		print("[PoisonSelectionManager] 教程模式：毒药阶段完成，准备进入选择阶段")
+
+		-- 识别真实玩家和NPC
+		local realPlayer = nil
+		local npcPlayer = nil
+
+		if _G.TutorialBotService and _G.TutorialBotService:isBot(poisonState.player1) then
+			npcPlayer = poisonState.player1
+			realPlayer = poisonState.player2
+		elseif _G.TutorialBotService and _G.TutorialBotService:isBot(poisonState.player2) then
+			npcPlayer = poisonState.player2
+			realPlayer = poisonState.player1
+		end
+
+		-- 为真实玩家发送镜头控制命令
+		if realPlayer and isRealPlayer(realPlayer) then
+			local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+			if remoteEventsFolder then
+				local cameraControlEvent = remoteEventsFolder:FindFirstChild("CameraControl")
+				if cameraControlEvent then
+					-- 获取表数据
+					local tablePart = nil
+					if _G.TableManager then
+						local gameInst = _G.TableManager.getTableInstance(tableId)
+						if gameInst and gameInst.tablePart then
+							tablePart = gameInst.tablePart
+						end
+					end
+
+					if tablePart then
+						-- 提取CFrame的12个数值组件
+						local tableCFrame = tablePart.CFrame
+						local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = tableCFrame:GetComponents()
+
+						local cameraData = {
+							tableId = tableId,
+							tablePosition = {x = tablePart.Position.x, y = tablePart.Position.y, z = tablePart.Position.z},
+							tableData = {
+								position = {x = tablePart.Position.x, y = tablePart.Position.y, z = tablePart.Position.z},
+								cframeValues = {x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22}
+							}
+						}
+
+						-- 发送进入选择阶段的镜头命令
+						cameraControlEvent:FireClient(realPlayer, "enterSelect", cameraData)
+						print("[PoisonSelectionManager] ✓ 为真实玩家发送enterSelect镜头命令")
+					end
+				end
+			end
+		end
+
+		-- 不显示Props面板
+		print("[PoisonSelectionManager] 教程模式：跳过显示Props面板")
+	else
+		-- 只在非教程模式下显示道具界面
+		-- 显示道具界面给双方玩家（只给该桌子玩家）
+		PoisonSelectionManager.showPropsUIForPlayers(poisonState.player1, poisonState.player2)
+	end
 
 	-- 直接调用DrinkSelectionManager开始轮流选择
 	if not DrinkSelectionManager then
@@ -900,11 +1081,26 @@ function PoisonSelectionManager.showPropsUIForPlayers(player1, player2)
 	local propUpdateEvent = remoteEventsFolder:FindFirstChild("PropUpdate")
 
 	if propUpdateEvent then
+		-- 🔧 CRITICAL FIX: Check if player1 is NPC before FireClient
 		if player1 and player1.Parent then
-			propUpdateEvent:FireClient(player1, "showPropsUI")
+			local isNPC1 = false
+			if _G.TutorialBotService then
+				isNPC1 = _G.TutorialBotService:isBot(player1)
+			end
+			if not isNPC1 then
+				propUpdateEvent:FireClient(player1, "showPropsUI")
+			end
 		end
+
+		-- 🔧 CRITICAL FIX: Check if player2 is NPC before FireClient
 		if player2 and player2.Parent then
-			propUpdateEvent:FireClient(player2, "showPropsUI")
+			local isNPC2 = false
+			if _G.TutorialBotService then
+				isNPC2 = _G.TutorialBotService:isBot(player2)
+			end
+			if not isNPC2 then
+				propUpdateEvent:FireClient(player2, "showPropsUI")
+			end
 		end
 	else
 		warn("未找到PropUpdate RemoteEvent")
@@ -993,7 +1189,7 @@ function PoisonSelectionManager.endPoisonPhaseByPlayerLeave(winner, leavingPlaye
 		-- 隐藏选择UI
 		PoisonSelectionManager.hideSelectionUI(player)
 		-- 发送hideAll指令
-		if poisonSelectionEvent then
+		if poisonSelectionEvent and isRealPlayer(player) then
 			poisonSelectionEvent:FireClient(player, "hideAll")
 		end
 	end
@@ -1083,7 +1279,7 @@ function PoisonSelectionManager.onDeveloperProductPurchaseSuccess(player, produc
 			local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
 			if remoteEventsFolder then
 				local poisonSelectionEvent = remoteEventsFolder:FindFirstChild("PoisonSelection")
-				if poisonSelectionEvent and player.Parent then
+				if poisonSelectionEvent and isRealPlayer(player) then
 					-- 使用pcall防止RemoteEvent调用失败
 					local eventSuccess, eventError = pcall(function()
 						poisonSelectionEvent:FireClient(player, "purchaseCompensation", {

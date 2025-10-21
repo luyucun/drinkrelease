@@ -12,6 +12,15 @@ local RunService = game:GetService("RunService")
 local FirstPlayerRandom = Random.new()
 local AutoSelectRandom = Random.new()
 
+-- 🔧 修复：辅助函数 - 检查是否是真实的 Roblox Player 对象（排除 NPC）
+local function isRealPlayer(player)
+	if not player then return false end
+	if typeof(player) ~= "Instance" then return false end
+	if not player:IsA("Player") then return false end
+	if not player.Parent then return false end
+	return true
+end
+
 -- 结果显示时长配置
 local RESULT_DISPLAY_DURATION = 0.5  -- Safe/Poison 文本显示时长（秒）
 
@@ -64,6 +73,7 @@ local function createNewSelectionState()
 		availableDrinks = {},
 		startTime = 0,
 		isProcessingSelection = false,  -- 🔒 防止回合跳过：标记是否正在处理选择
+		realPlayers = {},  -- 🔧 V1.6修复：仅包含真实玩家的列表，用于倒计时
 	}
 end
 
@@ -164,7 +174,7 @@ function DrinkSelectionManager.startSelectionTurnCountdown(tableId, currentPlaye
 		tableId,
 		countdownTypes.SELECTION_PHASE,
 		config.SELECTION_PHASE_DURATION,
-		selectionState.players or {selectionState.player1, selectionState.player2},
+		selectionState.realPlayers or {selectionState.player1, selectionState.player2},
 		options
 	)
 
@@ -328,7 +338,55 @@ function DrinkSelectionManager.startSelectionPhase(player1, player2)
 		table.insert(selectionState.availableDrinks, i)
 	end
 
-	-- 随机决定首先选择的玩家
+	-- 🔧 V1.6修复：建立仅包含真实玩家的列表（用于倒计时RemoteEvent）
+	selectionState.realPlayers = {}
+	if isRealPlayer(player1) then
+		table.insert(selectionState.realPlayers, player1)
+	end
+	if isRealPlayer(player2) then
+		table.insert(selectionState.realPlayers, player2)
+	end
+
+	-- 🆕 检查是否为教程模式
+	local gameInstance = nil
+	if _G.TableManager then
+		gameInstance = _G.TableManager.getTableInstance(tableId)
+	end
+
+	if gameInstance and gameInstance.isTutorial then
+		-- 🔧 V1.6CRITICAL修复: 教程模式不要做循环，而是标记教程状态并继承normal流程
+		print("[DrinkSelectionManager] 教程模式开启，继承正常UI/倒计时流程，NPC自动选择由回合逻辑处理")
+
+		-- 标记教程状态，供后续逻辑使用
+		selectionState.tutorialMode = true
+
+		-- 识别真实玩家和NPC
+		local realPlayer = nil
+		local npcPlayer = nil
+		if _G.TutorialBotService then
+			if _G.TutorialBotService:isBot(player1) then
+				npcPlayer = player1
+				realPlayer = player2
+			elseif _G.TutorialBotService:isBot(player2) then
+				npcPlayer = player2
+				realPlayer = player1
+			end
+		end
+
+		selectionState.realPlayer = realPlayer
+		selectionState.npcPlayer = npcPlayer
+
+		print("[DrinkSelectionManager] 教程模式：真实玩家=" .. (realPlayer and realPlayer.Name or "nil")
+			.. ", NPC=" .. (npcPlayer and npcPlayer.Name or "nil"))
+	else
+		-- 正常模式：清除教程标记
+		selectionState.tutorialMode = false
+		selectionState.realPlayer = nil
+		selectionState.npcPlayer = nil
+	end
+
+	-- 🔧 CRITICAL FIX V1.6: 必须调用randomizeFirstPlayer来设置currentPlayer和waitingPlayer
+	-- 否则倒计时和UI提示的RemoteEvent都无法正确执行
 	DrinkSelectionManager.randomizeFirstPlayer(tableId)
 
 	-- 为下毒者显示红色标识(只对该桌子玩家)
@@ -340,35 +398,8 @@ function DrinkSelectionManager.startSelectionPhase(player1, player2)
 	-- 验证毒药注入情况
 	DrinkManager.debugPrintPoisonDataForTable(tableId)
 
-	-- 🔑 关键修复：游戏开始时重新启用SeatLockController的自动锁定功能
-	-- 确保游戏期间玩家坐下时会被锁定（只能通过Leave按钮离开）
-	-- 🔧 简化：直接通知客户端启用自动锁定
-	if player1 and player1.Parent then
-		pcall(function()
-			-- 通过RemoteEvent直接控制客户端座位系统
-			local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
-			if remoteEventsFolder then
-				local seatControlEvent = remoteEventsFolder:FindFirstChild("SeatControl")
-				if seatControlEvent then
-					seatControlEvent:FireClient(player1, "setGameActive", true)
-				end
-			end
-		end)
-	end
-	if player2 and player2.Parent then
-		pcall(function()
-			-- 通过RemoteEvent直接控制客户端座位系统
-			local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
-			if remoteEventsFolder then
-				local seatControlEvent = remoteEventsFolder:FindFirstChild("SeatControl")
-				if seatControlEvent then
-					seatControlEvent:FireClient(player2, "setGameActive", true)
-				end
-			end
-		end)
-	end
-
-	-- 开始第一轮选择
+	-- 🔧 CRITICAL FIX: 无论是否教程，都调用startPlayerTurn来启动UI/镜头/倒计时
+	-- startPlayerTurn会根据当前玩家是否为NPC来决定是否自动选择
 	DrinkSelectionManager.startPlayerTurn(tableId)
 
 	return true
@@ -416,13 +447,13 @@ function DrinkSelectionManager.showPoisonedDrinksToPlayers(tableId)
 	end
 
 	-- 发送给各自的客户端(只对该桌子玩家)
-	if #player1PoisonedDrinks > 0 and selectionState.player1 and selectionState.player1.Parent then
+	if #player1PoisonedDrinks > 0 and isRealPlayer(selectionState.player1) then
 		poisonIndicatorEvent:FireClient(selectionState.player1, "showPoisonIndicators", {
 			poisonedDrinks = player1PoisonedDrinks
 		})
 	end
 
-	if #player2PoisonedDrinks > 0 and selectionState.player2 and selectionState.player2.Parent then
+	if #player2PoisonedDrinks > 0 and isRealPlayer(selectionState.player2) then
 		poisonIndicatorEvent:FireClient(selectionState.player2, "showPoisonIndicators", {
 			poisonedDrinks = player2PoisonedDrinks
 		})
@@ -473,14 +504,14 @@ function DrinkSelectionManager.showRedNumForAllPlayers(tableId)
 	end
 
 	-- 发送给各自的客户端(只对该桌子玩家)
-	if #player1PoisonedDrinks > 0 and selectionState.player1 and selectionState.player1.Parent then
+	if #player1PoisonedDrinks > 0 and isRealPlayer(selectionState.player1) then
 		drinkSelectionEvent:FireClient(selectionState.player1, "showRedNumForPoison", {
 			poisonedDrinks = player1PoisonedDrinks,
 			tableId = tableId  -- 传递桌子ID给客户端
 		})
 	end
 
-	if #player2PoisonedDrinks > 0 and selectionState.player2 and selectionState.player2.Parent then
+	if #player2PoisonedDrinks > 0 and isRealPlayer(selectionState.player2) then
 		drinkSelectionEvent:FireClient(selectionState.player2, "showRedNumForPoison", {
 			poisonedDrinks = player2PoisonedDrinks,
 			tableId = tableId  -- 传递桌子ID给客户端
@@ -527,48 +558,92 @@ function DrinkSelectionManager.startPlayerTurn(tableId)
 	DrinkSelectionManager.showRedNumForCurrentPlayer(selectionState.currentPlayer)
 
 	-- 切换镜头焦点到选择状态(只对该桌子玩家)
-	if selectionState.currentPlayer and selectionState.currentPlayer.Parent then
+	if isRealPlayer(selectionState.currentPlayer) then
 		cameraControlEvent:FireClient(selectionState.currentPlayer, "enterSelect")
 	end
-	if selectionState.waitingPlayer and selectionState.waitingPlayer.Parent then
+
+	if isRealPlayer(selectionState.waitingPlayer) then
 		cameraControlEvent:FireClient(selectionState.waitingPlayer, "enterSelect")
 	end
 
-	-- V1.4: 启动当前玩家的倒计时
+	-- V1.4: 启动当前玩家的倒计时（但只对真实玩家）
 	DrinkSelectionManager.startSelectionTurnCountdown(tableId, selectionState.currentPlayer)
+
+	-- 🔧 V1.6修复: 教程模式下如果当前玩家是NPC，立即触发自动选择
+	if selectionState.tutorialMode and selectionState.currentPlayer and not isRealPlayer(selectionState.currentPlayer) then
+		-- 当前玩家是NPC，启动自动选择流程
+		spawn(function()
+			print("[DrinkSelectionManager] 教程模式: 当前玩家是NPC，触发自动选择")
+
+			-- 等待一小段时间让倒计时UI在真实玩家屏幕上出现
+			wait(0.5)
+
+			-- 检查回合是否还有效
+			if selectionState.activePhase and selectionState.currentPlayer == selectionState.npcPlayer then
+				local selectionMade = false
+
+				-- 调度NPC决策
+				_G.TutorialBotService:scheduleBotDrinkDecision(function(drinkIndex)
+					-- 再次检查回合是否有效
+					if selectionState.activePhase and selectionState.currentPlayer == selectionState.npcPlayer then
+						print("[DrinkSelectionManager] 教程NPC选择: " .. drinkIndex)
+						DrinkSelectionManager.onPlayerSelectDrink(selectionState.npcPlayer, drinkIndex)
+						selectionMade = true
+					end
+				end, selectionState.availableDrinks)
+
+				-- 等待NPC做出选择（最多5秒）
+				local waited = 0
+				while not selectionMade and waited < 5 do
+					wait(0.1)
+					waited = waited + 0.1
+				end
+
+				-- 如果超时，自动选择
+				if not selectionMade and selectionState.activePhase and selectionState.currentPlayer == selectionState.npcPlayer then
+					if #selectionState.availableDrinks > 0 then
+						local randomIndex = AutoSelectRandom:NextInteger(1, #selectionState.availableDrinks)
+						local selectedDrink = selectionState.availableDrinks[randomIndex]
+						print("[DrinkSelectionManager] 教程NPC超时自动选择: " .. selectedDrink)
+						DrinkSelectionManager.onPlayerSelectDrink(selectionState.npcPlayer, selectedDrink)
+					end
+				end
+			end
+		end)
+	end
 end
 
 -- 显示SelectTips UI
 function DrinkSelectionManager.showSelectTips(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	drinkSelectionEvent:FireClient(player, "showSelectTips")
 end
 
 -- 隐藏SelectTips UI
 function DrinkSelectionManager.hideSelectTips(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	drinkSelectionEvent:FireClient(player, "hideSelectTips")
 end
 
 -- 显示等待提示UI
 function DrinkSelectionManager.showWaitingTips(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	drinkSelectionEvent:FireClient(player, "showWaitingTips")
 end
 
 -- 隐藏等待提示UI
 function DrinkSelectionManager.hideWaitingTips(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	drinkSelectionEvent:FireClient(player, "hideWaitingTips")
 end
 
 -- 为当前玩家显示红色Num文本
 function DrinkSelectionManager.showRedNumForCurrentPlayer(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	-- 获取当前桌子ID
 	local tableId = getTableIdFromPlayer(player)
@@ -593,7 +668,7 @@ function DrinkSelectionManager.showRedNumForCurrentPlayer(player)
 	end
 
 	-- 发送给客户端显示红色Num
-	if player and player.Parent then
+	if isRealPlayer(player) then
 		drinkSelectionEvent:FireClient(player, "showRedNumForPoison", {
 			poisonedDrinks = poisonedDrinks,
 			tableId = tableId  -- 传递桌子ID给客户端
@@ -604,7 +679,17 @@ end
 
 -- 显示道具UI
 function DrinkSelectionManager.showPropsUI(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
+
+	-- 🔧 修复V1.6: 教程模式下跳过显示Props
+	local tableId = getTableIdFromPlayer(player)
+	if tableId then
+		local gameInstance = _G.TableManager and _G.TableManager.getTableInstance(tableId)
+		if gameInstance and gameInstance.isTutorial then
+			-- 教程模式下不显示Props
+			return
+		end
+	end
 
 	-- 通过RemoteEvent通知客户端显示道具UI
 	local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -616,7 +701,7 @@ end
 
 -- 隐藏道具UI
 function DrinkSelectionManager.hidePropsUI(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	-- 通过RemoteEvent通知客户端隐藏道具UI
 	local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -669,7 +754,7 @@ end
 
 -- 显示选择UI
 function DrinkSelectionManager.showSelectionUI(player, tableId)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	-- 如果没有传tableId,尝试从玩家检测
 	if not tableId then
@@ -692,7 +777,7 @@ end
 
 -- 隐藏选择UI
 function DrinkSelectionManager.hideSelectionUI(player)
-	if not player then return end
+	if not isRealPlayer(player) then return end
 
 	drinkSelectionEvent:FireClient(player, "hideSelectionUI")
 end
@@ -728,7 +813,8 @@ function DrinkSelectionManager.onPlayerSelectDrink(player, drinkIndex)
 			", waitingPlayer=" .. (selectionState.waitingPlayer and selectionState.waitingPlayer.Name or "无"))
 
 		-- 同时通知客户端拒绝这次选择（客户端应该忽略结果）
-		if player and player.Parent then
+		-- 🔧 关键修复：只有真实玩家才能接收 FireClient 消息
+		if isRealPlayer(player) then
 			drinkSelectionEvent:FireClient(player, "selectionRejected", {
 				reason = "not_your_turn",
 				currentPlayer = currentPlayerName
@@ -936,13 +1022,13 @@ function DrinkSelectionManager.playDrinkingAnimation(player, drinkIndex, tableId
 				local drinkSelectionEvent = remoteEventsFolder:FindFirstChild("DrinkSelection")
 				if drinkSelectionEvent then
 					-- 通知两个玩家停止饮用动画
-					if selectionState.player1 and selectionState.player1.Parent then
+					if isRealPlayer(selectionState.player1) then
 						drinkSelectionEvent:FireClient(selectionState.player1, "stopDrinkingAnimation", {
 							targetPlayer = player.Name,
 							drinkIndex = drinkIndex
 						})
 					end
-					if selectionState.player2 and selectionState.player2.Parent then
+					if isRealPlayer(selectionState.player2) then
 						drinkSelectionEvent:FireClient(selectionState.player2, "stopDrinkingAnimation", {
 							targetPlayer = player.Name,
 							drinkIndex = drinkIndex
@@ -1019,11 +1105,38 @@ function DrinkSelectionManager.executeDrinking(player, drinkIndex, tableId)
 
 
 	-- 聚焦镜头到饮用玩家(只对该桌子玩家)
-	if selectionState.player1 and selectionState.player1.Parent then
-		cameraControlEvent:FireClient(selectionState.player1, "focusOnDrinking", {targetPlayer = player.Name})
-	end
-	if selectionState.player2 and selectionState.player2.Parent then
-		cameraControlEvent:FireClient(selectionState.player2, "focusOnDrinking", {targetPlayer = player.Name})
+	-- 🔧 修复：如果饮用者是 NPC，跳过镜头控制避免客户端错误
+	if isRealPlayer(player) then
+		-- 只有当饮用者是真实玩家时，才向观看者发送镜头控制
+		if isRealPlayer(selectionState.player1) then
+			cameraControlEvent:FireClient(selectionState.player1, "focusOnDrinking", {targetPlayer = player.Name})
+		end
+		if isRealPlayer(selectionState.player2) then
+			cameraControlEvent:FireClient(selectionState.player2, "focusOnDrinking", {targetPlayer = player.Name})
+		end
+	else
+		-- 🔧 V1.6修复: NPC饮用时，为真实玩家设置镜头对准NPC
+		-- 获取NPC角色信息发送给客户端
+		if player and player.Character then
+			local npcCharacter = player.Character
+			local npcPosition = npcCharacter:FindFirstChild("HumanoidRootPart")
+
+			if npcPosition then
+				-- 为真实玩家发送NPC镜头信息
+				if isRealPlayer(selectionState.player1) then
+					cameraControlEvent:FireClient(selectionState.player1, "focusOnDrinking", {
+						targetPlayer = npcCharacter.Name,
+						npcCharacterModel = npcCharacter
+					})
+				end
+				if isRealPlayer(selectionState.player2) then
+					cameraControlEvent:FireClient(selectionState.player2, "focusOnDrinking", {
+						targetPlayer = npcCharacter.Name,
+						npcCharacterModel = npcCharacter
+					})
+				end
+			end
+		end
 	end
 
 	-- 🔧 关键修复：先克隆桌上的模型，但不要立即放到 Workspace
@@ -1076,6 +1189,12 @@ end
 
 -- 执行玩家死亡和复活（重构：配合新的服务端主导架构）
 function DrinkSelectionManager.executePlayerDeathWithEffect(player)
+	-- 🔧 关键修复：检查是否为真实玩家，NPC 伪对象无需死亡流程
+	if not isRealPlayer(player) then
+		-- NPC 或无效对象，跳过死亡流程
+		return
+	end
+
 	if not player or not player.Character then
 		warn("DrinkSelectionManager.executePlayerDeathWithEffect: 玩家 " .. (player and player.Name or "未知") .. " 没有角色")
 		return
@@ -1102,7 +1221,9 @@ end
 function DrinkSelectionManager.executePlayerDeathFallback(player)
 
 	-- 立即恢复死亡玩家的镜头到默认状态
-	cameraControlEvent:FireClient(player, "restore")
+	if isRealPlayer(player) then
+		cameraControlEvent:FireClient(player, "restore")
+	end
 
 	-- 禁用死亡玩家的Leave按钮
 	if _G.GameManager and _G.GameManager.disableLeaveButton then
@@ -1138,7 +1259,9 @@ function DrinkSelectionManager.executePlayerDeath(player)
 
 
 	-- 立即恢复死亡玩家的镜头到默认状态
-	cameraControlEvent:FireClient(player, "restore")
+	if isRealPlayer(player) then
+		cameraControlEvent:FireClient(player, "restore")
+	end
 
 	-- 禁用死亡玩家的Leave按钮
 	if _G.GameManager and _G.GameManager.disableLeaveButton then
@@ -1201,7 +1324,8 @@ function DrinkSelectionManager.showDrinkingResult(player, drinkIndex, isPoisoned
 	local resultColor = isPoisoned and Color3.new(1, 0, 0) or Color3.new(0, 1, 0)
 
 	-- 在玩家头顶显示结果(只对该桌子玩家)
-	if selectionState.player1 and selectionState.player1.Parent then
+	-- 🔧 关键修复：只向真实玩家发送 FireClient，避免 NPC 代理 table 触发 cast 错误
+	if isRealPlayer(selectionState.player1) then
 		drinkSelectionEvent:FireClient(selectionState.player1, "showResult", {
 			targetPlayer = player.Name,
 			result = resultText,
@@ -1210,13 +1334,52 @@ function DrinkSelectionManager.showDrinkingResult(player, drinkIndex, isPoisoned
 		})
 	end
 
-	if selectionState.player2 and selectionState.player2.Parent then
+	if isRealPlayer(selectionState.player2) then
 		drinkSelectionEvent:FireClient(selectionState.player2, "showResult", {
 			targetPlayer = player.Name,
 			result = resultText,
 			color = resultColor,
 			drinkIndex = drinkIndex
 		})
+	end
+
+	-- 🔧 V1.6修复: NPC喝奶茶时在头顶显示Safe/Poison
+	-- 如果饮用者是NPC，需要在服务器端为其创建临时BillboardGui
+	if player and not isRealPlayer(player) then
+		spawn(function()
+			local character = player and player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local rootPart = humanoid and humanoid.RootPart
+
+			if rootPart then
+				-- 创建临时BillboardGui显示结果
+				local billboard = Instance.new("BillboardGui")
+				billboard.Name = "TutorialResultBillboard"
+				billboard.Size = UDim2.new(0, 120, 0, 40)
+				billboard.ExtentsOffset = Vector3.new(0, 4, 0)
+				billboard.MaxDistance = 100
+				billboard.Parent = rootPart
+
+				local label = Instance.new("TextLabel")
+				label.Size = UDim2.new(1, 0, 1, 0)
+				label.BackgroundTransparency = 1
+				label.TextStrokeTransparency = 0.2
+				label.Text = resultText
+				label.TextColor3 = resultColor
+				label.Font = Enum.Font.GothamBold
+				label.TextScaled = true
+				label.Parent = billboard
+
+				print("[DrinkSelectionManager] ✓ NPC头顶显示结果: " .. resultText)
+
+				task.delay(RESULT_DISPLAY_DURATION, function()
+					if billboard and billboard.Parent then
+						billboard:Destroy()
+						print("[DrinkSelectionManager] ✓ NPC头顶结果显示已销毁")
+					end
+				end)
+			end
+		end)
 	end
 
 end
@@ -1287,7 +1450,8 @@ function DrinkSelectionManager.switchToNextPlayer(tableId)
 
 	-- ✅ 修复V2: 在切换玩家之前，立即禁用等待方的所有交互
 	-- 防止等待方在玩家交换和UI更新之间的时间窗口内仍然能点击
-	if selectionState.waitingPlayer and selectionState.waitingPlayer.Parent then
+	-- 🔧 关键修复：检查是否为真实玩家再发送 FireClient
+	if selectionState.waitingPlayer and isRealPlayer(selectionState.waitingPlayer) then
 		-- 立即向等待方发送隐藏SelectTips（禁止交互）
 		drinkSelectionEvent:FireClient(selectionState.waitingPlayer, "hideSelectTips")
 		-- 立即禁用等待方的点击处理（客户端需要实现此逻辑）
@@ -1356,6 +1520,16 @@ function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 
 	-- 清理桌子上的所有奶茶（使用正确的桌子ID）
 	DrinkManager.clearDrinksForTable(tableId)
+
+	-- 🔧 V1.6修复：教程模式下移除座位，强制玩家前往Portal
+	local gameInstance = _G.TableManager and _G.TableManager.getTableInstance(tableId)
+	if gameInstance and gameInstance.isTutorial then
+		local TutorialEnvironmentManager = _G.TutorialEnvironmentManager
+		if TutorialEnvironmentManager then
+			TutorialEnvironmentManager:removeTutorialSeat()
+			print("[DrinkSelectionManager] ✓ 教程模式：游戏结束时已移除教程座位")
+		end
+	end
 
 	-- 立即通知GameManager游戏已进入结果阶段，防止重复获胜判定
 	local gamePhaseFlag = ReplicatedStorage:FindFirstChild("GamePhaseFlag")
@@ -1438,7 +1612,7 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 
 				-- 🔑 关键修复：游戏结束时禁用SeatLockController的自动锁定功能
 				-- 这样玩家重新坐下时不会被自动锁定，可以自由使用Leave按钮离开
-				if selectionState.player1 and selectionState.player1.Parent then
+				if isRealPlayer(selectionState.player1) then
 					pcall(function()
 						-- 通过RemoteEvent直接控制客户端座位系统
 						local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -1450,7 +1624,7 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 						end
 					end)
 				end
-				if selectionState.player2 and selectionState.player2.Parent then
+				if isRealPlayer(selectionState.player2) then
 					pcall(function()
 						-- 通过RemoteEvent直接控制客户端座位系统
 						local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -1652,36 +1826,42 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 				-- 检查player1状态
 				if actualPlayer1 and actualPlayer1.Parent and actualPlayer1.Character then
 					-- player1（可能是胜利者）始终设置准备状态镜头
-					local cameraData = {
-						tableId = tableId,
-						tablePosition = gameInstance.tablePart.Position
-					}
-					cameraControlEvent:FireClient(actualPlayer1, "enterPrepare", cameraData)
-
-					-- 确保Leave按钮启用（如果在座位上）
-					local humanoid1 = actualPlayer1.Character:FindFirstChildOfClass("Humanoid")
-					if humanoid1 and humanoid1.Sit then
-						gameInstance:enableLeaveButton(actualPlayer1)
-					end
-					print(string.format("✅ 玩家 %s 镜头已设置为准备状态", actualPlayer1.Name))
-				end
-
-				-- 检查player2状态
-				if actualPlayer2 and actualPlayer2.Parent and actualPlayer2.Character then
-					local humanoid2 = actualPlayer2.Character:FindFirstChildOfClass("Humanoid")
-					if humanoid2 and humanoid2.Sit then
-						-- player2在座位上，设置准备状态镜头
+					-- 🔧 检查是否为真实玩家
+					if isRealPlayer(actualPlayer1) then
 						local cameraData = {
 							tableId = tableId,
 							tablePosition = gameInstance.tablePart.Position
 						}
-						cameraControlEvent:FireClient(actualPlayer2, "enterPrepare", cameraData)
-						gameInstance:enableLeaveButton(actualPlayer2)
-						print(string.format("✅ 玩家 %s 镜头已恢复到准备状态", actualPlayer2.Name))
-					else
-						-- player2不在座位上（失败者在SpawnLocation），恢复默认镜头
-						cameraControlEvent:FireClient(actualPlayer2, "restore")
-						print(string.format("✅ 玩家 %s 镜头已恢复为默认状态", actualPlayer2.Name))
+						cameraControlEvent:FireClient(actualPlayer1, "enterPrepare", cameraData)
+
+						-- 确保Leave按钮启用（如果在座位上）
+						local humanoid1 = actualPlayer1.Character:FindFirstChildOfClass("Humanoid")
+						if humanoid1 and humanoid1.Sit then
+							gameInstance:enableLeaveButton(actualPlayer1)
+						end
+						print(string.format("✅ 玩家 %s 镜头已设置为准备状态", actualPlayer1.Name))
+					end
+				end
+
+				-- 检查player2状态
+				if actualPlayer2 and actualPlayer2.Parent and actualPlayer2.Character then
+					-- 🔧 检查是否为真实玩家
+					if isRealPlayer(actualPlayer2) then
+						local humanoid2 = actualPlayer2.Character:FindFirstChildOfClass("Humanoid")
+						if humanoid2 and humanoid2.Sit then
+							-- player2在座位上，设置准备状态镜头
+							local cameraData = {
+								tableId = tableId,
+								tablePosition = gameInstance.tablePart.Position
+							}
+							cameraControlEvent:FireClient(actualPlayer2, "enterPrepare", cameraData)
+							gameInstance:enableLeaveButton(actualPlayer2)
+							print(string.format("✅ 玩家 %s 镜头已恢复到准备状态", actualPlayer2.Name))
+						else
+							-- player2不在座位上（失败者在SpawnLocation），恢复默认镜头
+							cameraControlEvent:FireClient(actualPlayer2, "restore")
+							print(string.format("✅ 玩家 %s 镜头已恢复为默认状态", actualPlayer2.Name))
+						end
 					end
 				end
 			end
@@ -1797,6 +1977,11 @@ end
 function DrinkSelectionManager.setWinnerPrepareCamera(player)
 	if not player then return end
 
+	-- 🔧 关键修复：检查是否为真实玩家，NPC 不能接收 FireClient
+	if not isRealPlayer(player) then
+		return
+	end
+
 	-- 🔑 Bug 1 修复：无论玩家是否在座位上，都优先使用桌面镜头
 	-- 只有完全获取不到桌子数据时才回退到 restore
 
@@ -1827,6 +2012,10 @@ end
 function DrinkSelectionManager.resetWinnerToPrepareState(player)
 	if not player then return end
 
+	-- 🔧 关键修复：检查是否为真实玩家，NPC 不能接收 FireClient
+	if not isRealPlayer(player) then
+		return
+	end
 
 	-- 立即设置获胜玩家的镜头到准备状态
 	if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Sit then

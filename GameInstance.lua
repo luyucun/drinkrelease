@@ -55,6 +55,9 @@ function GameInstance.new(tableId, tableFolder)
 	self.tableId = tableId
 	self.tableFolder = tableFolder
 
+	-- 🆕 教程模式标记
+	self.isTutorial = _G.TutorialMode or false
+
 	-- 获取桌子组件
 	self.classicTable = tableFolder:WaitForChild("ClassicTable")
 	self.classicChair1 = tableFolder:WaitForChild("ClassicChair1")
@@ -323,8 +326,14 @@ end
 -- 玩家坐下处理
 function GameInstance:onPlayerSat(seat, player)
 
-	-- 通知TableManager更新玩家映射
-	if _G.TableManager then
+	-- 🆕 NPC代理识别
+	local isNPC = false
+	if _G.TutorialBotService then
+		isNPC = _G.TutorialBotService:isBot(player)
+	end
+
+	-- 通知TableManager更新玩家映射（真实玩家才需要）
+	if _G.TableManager and not isNPC then
 		_G.TableManager.assignPlayerToTable(player, self.tableId)
 	end
 
@@ -337,37 +346,47 @@ function GameInstance:onPlayerSat(seat, player)
 		self.gameState.player1 = player
 		self.gameState.playersReady = self.gameState.playersReady + 1
 
-		-- 立即启用Leave按钮
-		self:enableLeaveButton(player)
+		-- 立即启用Leave按钮（只有真实玩家才需要）
+		if not isNPC then
+			self:enableLeaveButton(player)
+		end
 
 		-- 🔧 修改：玩家单独坐下时不锁定镜头，保持镜头自由
 		-- 镜头锁定延迟到倒计时阶段进行
 
 		-- 补发菜单指令：确保玩家看到正确的菜单状态（只显示shop按钮）
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
-		self:setMenuVisibility(player, true)
-		self:setSpecificMenuVisibility(player, {
-			shop = true,
-			death = false
-		})
+		-- （只有真实玩家才需要菜单）
+		if not isNPC then
+			self:setMenuVisibility(player, true)
+			self:setSpecificMenuVisibility(player, {
+				shop = true,
+				death = false
+			})
+		end
 
 	elseif seat == self.seat2 and not self.gameState.player2 then
 		self.gameState.player2 = player
 		self.gameState.playersReady = self.gameState.playersReady + 1
 
-		-- 立即启用Leave按钮
-		self:enableLeaveButton(player)
+		-- 立即启用Leave按钮（只有真实玩家才需要）
+		if not isNPC then
+			self:enableLeaveButton(player)
+		end
 
 		-- 🔧 修改：玩家单独坐下时不锁定镜头，保持镜头自由
 		-- 镜头锁定延迟到倒计时阶段进行
 
 		-- 补发菜单指令：确保玩家看到正确的菜单状态（只显示shop按钮）
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
-		self:setMenuVisibility(player, true)
-		self:setSpecificMenuVisibility(player, {
-			shop = true,
-			death = false
-		})
+		-- （只有真实玩家才需要菜单）
+		if not isNPC then
+			self:setMenuVisibility(player, true)
+			self:setSpecificMenuVisibility(player, {
+				shop = true,
+				death = false
+			})
+		end
 	end
 
 	self:updatePlayerCount()
@@ -381,8 +400,14 @@ end
 -- 玩家离开座位处理
 function GameInstance:onPlayerLeft(seat, player)
 
-	-- 通知TableManager移除玩家映射
-	if _G.TableManager then
+	-- 🆕 NPC代理识别
+	local isNPC = false
+	if _G.TutorialBotService then
+		isNPC = _G.TutorialBotService:isBot(player)
+	end
+
+	-- 通知TableManager移除玩家映射（真实玩家才需要）
+	if _G.TableManager and not isNPC then
 		_G.TableManager.removePlayerFromTable(player)
 	end
 
@@ -400,9 +425,11 @@ function GameInstance:onPlayerLeft(seat, player)
 		self.gameState.player1 = nil
 		self.gameState.playersReady = math.max(self.gameState.playersReady - 1, 0)
 
-		-- 无论什么阶段，都要恢复镜头和禁用Leave按钮
-		self:disableLeaveButton(player)
-		self:sendCameraControl(player, "restore")
+		-- 无论什么阶段，都要恢复镜头和禁用Leave按钮（只有真实玩家才需要）
+		if not isNPC then
+			self:disableLeaveButton(player)
+			self:sendCameraControl(player, "restore")
+		end
 
 		-- ✨ 新增：倒计时中有人离开时，为剩余玩家恢复镜头自由状态
 		if self.gameState.isCountingDown and self.gameState.player2 then
@@ -412,11 +439,14 @@ function GameInstance:onPlayerLeft(seat, player)
 
 		-- 离席时补发菜单指令：确保离席玩家立刻恢复到"仅显示Shop"的菜单状态
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
-		self:setMenuVisibility(player, true)
-		self:setSpecificMenuVisibility(player, {
-			shop = true,
-			death = false
-		})
+		-- （只有真实玩家才需要菜单）
+		if not isNPC then
+			self:setMenuVisibility(player, true)
+			self:setSpecificMenuVisibility(player, {
+				shop = true,
+				death = false
+			})
+		end
 
 	elseif seat == self.seat2 and self.gameState.player2 == player then
 		wasInGame = true
@@ -430,9 +460,11 @@ function GameInstance:onPlayerLeft(seat, player)
 		self.gameState.player2 = nil
 		self.gameState.playersReady = math.max(self.gameState.playersReady - 1, 0)
 
-		-- 无论什么阶段，都要恢复镜头和禁用Leave按钮
-		self:disableLeaveButton(player)
-		self:sendCameraControl(player, "restore")
+		-- 无论什么阶段，都要恢复镜头和禁用Leave按钮（只有真实玩家才需要）
+		if not isNPC then
+			self:disableLeaveButton(player)
+			self:sendCameraControl(player, "restore")
+		end
 
 		-- ✨ 新增：倒计时中有人离开时，为剩余玩家恢复镜头自由状态
 		if self.gameState.isCountingDown and self.gameState.player1 then
@@ -442,11 +474,14 @@ function GameInstance:onPlayerLeft(seat, player)
 
 		-- 离席时补发菜单指令：确保离席玩家立刻恢复到"仅显示Shop"的菜单状态
 		-- Skin和Emote按钮始终显示，不受游戏状态影响
-		self:setMenuVisibility(player, true)
-		self:setSpecificMenuVisibility(player, {
-			shop = true,
-			death = false
-		})
+		-- （只有真实玩家才需要菜单）
+		if not isNPC then
+			self:setMenuVisibility(player, true)
+			self:setSpecificMenuVisibility(player, {
+				shop = true,
+				death = false
+			})
+		end
 	end
 
 	-- 如果玩家确实在游戏中，更新显示
@@ -472,21 +507,35 @@ end
 function GameInstance:sendCameraControl(player, action, data)
 	-- 验证player参数
 	if not player then return end
-	if not player:IsA("Player") then return end
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC（NPC 是普通 table）
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	if not player.Parent then return end  -- 检查玩家是否仍在游戏中
 
 	local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
 	local cameraControlEvent = remoteEventsFolder:WaitForChild("CameraControl")
 
-	-- 添加桌子特定信息
-	local cameraData = data or {}
-	cameraData.tableId = self.tableId
-	cameraData.tablePosition = self.tablePart.Position
+	-- 创建全新的、干净的数据表（不使用外来的data参数以避免序列化问题）
+	local tableCFrame = self.tablePart.CFrame
+	-- 提取CFrame的12个数值组件：位置(x,y,z) + 旋转矩阵(3x3)
+	local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = tableCFrame:GetComponents()
 
-	-- ✅ 改进：传递表的完整CFrame（包含旋转）而不仅仅是位置
-	cameraData.tableData = {
-		position = self.tablePart.Position,
-		cframe = self.tablePart.CFrame  -- 包含旋转信息
+	-- 🔧 修复：创建全新的表，只包含可序列化的基础数据类型
+	local cameraData = {
+		tableId = self.tableId,
+		tablePosition = {
+			x = self.tablePart.Position.x,
+			y = self.tablePart.Position.y,
+			z = self.tablePart.Position.z
+		},
+		tableData = {
+			position = {
+				x = self.tablePart.Position.x,
+				y = self.tablePart.Position.y,
+				z = self.tablePart.Position.z
+			},
+			-- 将12个数值分别存储为可序列化的格式
+			cframeValues = {x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22}
+		}
 	}
 
 	cameraControlEvent:FireClient(player, action, cameraData)
@@ -495,7 +544,8 @@ end
 -- 控制Menu界面显示/隐藏
 function GameInstance:setMenuVisibility(player, visible)
 	if not player then return end
-	if not player:IsA("Player") then return end
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	if not player.Parent then return end  -- 检查玩家是否仍在游戏中
 
 	local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -514,7 +564,8 @@ end
 -- 控制特定Menu按钮显示/隐藏
 function GameInstance:setSpecificMenuVisibility(player, config)
 	if not player then return end
-	if not player:IsA("Player") then return end
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	if not player.Parent then return end  -- 检查玩家是否仍在游戏中
 
 	local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -553,7 +604,8 @@ end
 -- 启用Leave按钮
 function GameInstance:enableLeaveButton(player)
 	if not player then return end
-
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	-- 检查玩家是否仍在游戏中
 	if not player.Parent then return end
 
@@ -573,7 +625,8 @@ end
 -- 禁用Leave按钮
 function GameInstance:disableLeaveButton(player)
 	if not player then return end
-
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	-- 检查玩家是否仍在游戏中
 	if not player.Parent then return end
 
@@ -589,7 +642,8 @@ end
 -- 玩家手动离开座位
 function GameInstance:playerLeaveManually(player)
 	if not player then return end
-	if not player:IsA("Player") then return end
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	if not player.Parent then return end  -- 检查玩家是否仍在游戏中
 
 	-- 通知客户端解除座位锁定
@@ -749,7 +803,8 @@ end
 -- 更新倒计时UI
 function GameInstance:updateCountdownUI(player, timeLeft)
 	if not player then return end
-
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	-- 检查玩家是否仍在游戏中
 	if not player.Parent then return end
 
@@ -772,7 +827,8 @@ end
 -- 隐藏倒计时UI
 function GameInstance:hideCountdownUI(player)
 	if not player then return end
-
+	-- 🔧 修复：检查是否是真实的 Roblox Player 对象，排除 NPC
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	-- 检查玩家是否仍在游戏中
 	if not player.Parent then return end
 
@@ -950,7 +1006,7 @@ function GameInstance:handlePlayerLeaveWin(leavingPlayer)
 			-- 通知获胜玩家游戏结束
 			local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
 			local drinkSelectionEvent = remoteEventsFolder:FindFirstChild("DrinkSelection")
-			if drinkSelectionEvent and winner and winner.Parent then
+			if drinkSelectionEvent and winner and typeof(winner) == "Instance" and winner:IsA("Player") and winner.Parent then
 				drinkSelectionEvent:FireClient(winner, "gameWin", {
 					reason = "opponent_left",
 					opponent = leavingPlayer.Name
@@ -1072,7 +1128,17 @@ function GameInstance:refreshSeatState()
 		-- 🔧 关键修复：增加座位占用者的安全检查
 		local character1 = self.seat1.Occupant.Parent
 		if character1 then
+			-- 🔧 V1.6: 先尝试从Players服务获取玩家
 			local player1 = Players:GetPlayerFromCharacter(character1)
+
+			-- 🔧 V1.6: 如果不是真实玩家，检查是否为NPC
+			if not player1 and _G.TutorialBotService then
+				if _G.TutorialBotService:isBotCharacter(character1) then
+					-- 使用NPC的伪Player对象
+					player1 = _G.TutorialBotService:getPlayerProxy()
+				end
+			end
+
 			if player1 and player1.Parent then  -- 检查玩家是否仍在游戏中
 				actualPlayer1 = player1
 				actualCount = actualCount + 1
@@ -1084,7 +1150,17 @@ function GameInstance:refreshSeatState()
 		-- 🔧 关键修复：增加座位占用者的安全检查
 		local character2 = self.seat2.Occupant.Parent
 		if character2 then
+			-- 🔧 V1.6: 先尝试从Players服务获取玩家
 			local player2 = Players:GetPlayerFromCharacter(character2)
+
+			-- 🔧 V1.6: 如果不是真实玩家，检查是否为NPC
+			if not player2 and _G.TutorialBotService then
+				if _G.TutorialBotService:isBotCharacter(character2) then
+					-- 使用NPC的伪Player对象
+					player2 = _G.TutorialBotService:getPlayerProxy()
+				end
+			end
+
 			if player2 and player2.Parent then  -- 检查玩家是否仍在游戏中
 				actualPlayer2 = player2
 				actualCount = actualCount + 1
@@ -1129,7 +1205,18 @@ function GameInstance:setupSeatDetection()
 	self.seat1:GetPropertyChangedSignal("Occupant"):Connect(function()
 		local occupant = self.seat1.Occupant
 		if occupant then
+			-- 🔧 V1.6: 先尝试从Players服务获取玩家
 			local player = Players:GetPlayerFromCharacter(occupant.Parent)
+
+			-- 🔧 V1.6: 如果不是真实玩家，检查是否为NPC
+			if not player and _G.TutorialBotService then
+				local npcCharacter = occupant.Parent
+				if _G.TutorialBotService:isBotCharacter(npcCharacter) then
+					-- 使用NPC的伪Player对象
+					player = _G.TutorialBotService:getPlayerProxy()
+				end
+			end
+
 			if player then
 				self:onPlayerSat(self.seat1, player)
 			end
@@ -1144,7 +1231,18 @@ function GameInstance:setupSeatDetection()
 	self.seat2:GetPropertyChangedSignal("Occupant"):Connect(function()
 		local occupant = self.seat2.Occupant
 		if occupant then
+			-- 🔧 V1.6: 先尝试从Players服务获取玩家
 			local player = Players:GetPlayerFromCharacter(occupant.Parent)
+
+			-- 🔧 V1.6: 如果不是真实玩家，检查是否为NPC
+			if not player and _G.TutorialBotService then
+				local npcCharacter = occupant.Parent
+				if _G.TutorialBotService:isBotCharacter(npcCharacter) then
+					-- 使用NPC的伪Player对象
+					player = _G.TutorialBotService:getPlayerProxy()
+				end
+			end
+
 			if player then
 				self:onPlayerSat(self.seat2, player)
 			end

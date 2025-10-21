@@ -40,7 +40,7 @@ local CONFIG = {
 	LIKE_CHECK_METHOD = "Badge",       -- 关注验证方式：Badge/GamePass/API
 	-- ⚠️ 重要：徽章 ID 必须是已在游戏后台创建的有效徽章，否则 AwardBadge 会报错
 	-- 部署前请确保该徽章存在，否则设置为 0 禁用验证
-	LIKE_BADGE_ID = 3617439526527764,                 -- Badge ID（需要创建后填入，0表示禁用验证）
+	LIKE_BADGE_ID = 0,                 -- Badge ID（需要创建后填入，0表示禁用验证）
 	MAX_RETRY_ATTEMPTS = 3,            -- DataStore保存最大重试次数
 	OFFLINE_SAVE_QUEUE_EXPIRE = 86400, -- 离线保存队列过期时间（24小时）
 	MAX_OFFLINE_SAVE_ATTEMPTS = 10     -- 离线保存最大重试次数

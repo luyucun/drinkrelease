@@ -294,6 +294,13 @@ end
 
 -- 发送倒计时事件给客户端
 function CountdownManager.fireCountdownEvent(player, action, data)
+    -- 🔧 V1.6修复：检查是否是真实的Roblox Player对象（排除NPC）
+    -- 避免向NPC（非Player实例）发送RemoteEvent导致的错误
+    if typeof(player) ~= "Instance" or not player:IsA("Player") then
+        -- NPC或无效对象，跳过发送
+        return
+    end
+
     local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
     if not remoteEventsFolder then
         warn("CountdownManager: RemoteEvents文件夹不存在")
