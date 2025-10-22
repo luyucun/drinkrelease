@@ -28,7 +28,6 @@ function TutorialEnvironmentManager:initializeTutorialSeat(chair2Model)
 
 	tutorialSeat2 = seat
 	seatRemoved = false
-	print("[TutorialEnvironmentManager] ✓ 已缓存教程场景Chair2 Seat: " .. seat.Name)
 	return true
 end
 
@@ -39,7 +38,6 @@ end
 function TutorialEnvironmentManager:removeTutorialSeat()
 	-- 🔧 幂等检查：如果已经移除过，直接返回
 	if seatRemoved then
-		print("[TutorialEnvironmentManager] 座位已经移除过，跳过重复移除")
 		return true
 	end
 
@@ -62,15 +60,11 @@ function TutorialEnvironmentManager:removeTutorialSeat()
 	seatRemoved = true
 	tutorialSeat2 = nil
 
-	print("[TutorialEnvironmentManager] ✓ 已移除教程座位: " .. parentName .. "/" .. seatName)
-	print("[TutorialEnvironmentManager] → 玩家将无法再次入座，必须前往Portal")
-
 	-- 🔧 V1.6修复: 游戏结束时重新定位Portal到指定坐标
 	local PortalTransportManager = _G.PortalTransportManager
 	if PortalTransportManager then
 		-- 将Portal移动到指定坐标：30.506, 1.509, -30.38
 		PortalTransportManager:repositionPortal(30.506, 1.509, -30.38)
-		print("[TutorialEnvironmentManager] ✓ 已重新定位Portal到教程完成坐标")
 	else
 		warn("[TutorialEnvironmentManager] PortalTransportManager不可用，无法重新定位Portal")
 	end

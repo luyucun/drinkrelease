@@ -76,7 +76,6 @@ end
 
 local function saveAnalyticsToDataStore(playerId, eventData)
 	if isStudio then
-		print("[TutorialAnalytics] Studio模式，跳过DataStore保存")
 		return
 	end
 
@@ -113,7 +112,6 @@ function TutorialAnalyticsService:trackPlayerEnterNewplayer(player)
 
 	-- 防重复检查
 	if trackedEvents[playerId] and trackedEvents[playerId].enterNewplayer then
-		print("[TutorialAnalytics] 玩家 " .. player.Name .. " 已记录过进入埋点，跳过重复记录")
 		return
 	end
 
@@ -131,8 +129,6 @@ function TutorialAnalyticsService:trackPlayerEnterNewplayer(player)
 
 	-- 保存到DataStore
 	saveAnalyticsToDataStore(playerId, eventData)
-
-	print("[TutorialAnalytics] ✓ 埋点1记录: 玩家进入Newplayer - " .. player.Name)
 end
 
 -- ============================================
@@ -153,7 +149,6 @@ function TutorialAnalyticsService:trackPlayerSitDown(player)
 
 	-- 防重复检查
 	if trackedEvents[playerId] and trackedEvents[playerId].sitDown then
-		print("[TutorialAnalytics] 玩家 " .. player.Name .. " 已记录过坐下埋点，跳过重复记录")
 		return
 	end
 
@@ -171,8 +166,6 @@ function TutorialAnalyticsService:trackPlayerSitDown(player)
 
 	-- 保存到DataStore
 	saveAnalyticsToDataStore(playerId, eventData)
-
-	print("[TutorialAnalytics] ✓ 埋点2记录: 玩家坐下 - " .. player.Name)
 end
 
 -- ============================================
@@ -193,7 +186,6 @@ function TutorialAnalyticsService:trackPortalInteraction(player, gameResult)
 
 	-- 防重复检查
 	if trackedEvents[playerId] and trackedEvents[playerId].portalInteraction then
-		print("[TutorialAnalytics] 玩家 " .. player.Name .. " 已记录过Portal交互埋点，跳过重复记录")
 		return
 	end
 
@@ -217,8 +209,6 @@ function TutorialAnalyticsService:trackPortalInteraction(player, gameResult)
 
 	-- 保存到DataStore
 	saveAnalyticsToDataStore(playerId, eventData)
-
-	print("[TutorialAnalytics] ✓ 埋点3记录: Portal交互 - " .. player.Name .. " | 游戏结果: " .. (gameResult or "unknown"))
 end
 
 -- ============================================
@@ -230,8 +220,6 @@ function TutorialAnalyticsService:cleanupPlayerTrack(player)
 
 	local playerId = getPlayerCacheKey(player)
 	clearPlayerTrack(playerId)
-
-	print("[TutorialAnalytics] ✓ 已清理玩家埋点缓存 - " .. player.Name)
 end
 
 -- ============================================

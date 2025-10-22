@@ -81,7 +81,6 @@ function PortalTransportManager:initializePortal(targetPlaceId)
 		promptPart.CanCollide = false
 		promptPart.Size = Vector3.new(4, 4, 4)
 		promptPart.Parent = portal
-		print("[PortalTransportManager] ✓ 已创建交互占位块 TutorialPromptPart")
 	end
 
 	-- 设置占位块位置为Portal的主要位置
@@ -102,7 +101,6 @@ function PortalTransportManager:initializePortal(targetPlaceId)
 		prompt.MaxActivationDistance = 12 -- 可根据体验调整
 		prompt.RequiresLineOfSight = false
 		prompt.Parent = promptPart
-		print("[PortalTransportManager] ✓ 已为交互占位块创建ProximityPrompt")
 	end
 
 	-- 保存占位块引用以便后续更新
@@ -120,9 +118,6 @@ function PortalTransportManager:initializePortal(targetPlaceId)
 		effectPart.CanCollide = false
 		effectPart.Size = Vector3.new(1, 1, 1)
 		effectPart.Parent = portal
-		print("[PortalTransportManager] ✓ 已创建Portal Base Part")
-	else
-		print("[PortalTransportManager] ✓ 找到Portal.Base Part")
 	end
 
 	-- 在 Base Part 下查找或创建 Attachment
@@ -131,9 +126,6 @@ function PortalTransportManager:initializePortal(targetPlaceId)
 		effectAttachment = Instance.new("Attachment")
 		effectAttachment.Name = "Attachment01"
 		effectAttachment.Parent = effectPart
-		print("[PortalTransportManager] ✓ 已在Portal.Base下创建Attachment01")
-	else
-		print("[PortalTransportManager] ✓ Portal.Base.Attachment已存在")
 	end
 
 	-- 保存 Base Part 的引用，便于后续使用
@@ -143,8 +135,6 @@ function PortalTransportManager:initializePortal(targetPlaceId)
 	portalState.portal = portal
 	portalState.targetPlaceId = targetPlaceId
 	portalState.initialized = true
-
-	print("[PortalTransportManager] ✓ Portal已初始化（坐标将在教程结束后设置）")
 
 	return true
 end
@@ -161,11 +151,8 @@ function PortalTransportManager:onPortalInteraction(player)
 
 	-- 检查玩家是否已在传送中
 	if playerBeingTeleported[player.UserId] then
-		print("[PortalTransportManager] 玩家 " .. player.Name .. " 正在传送中，跳过重复交互")
 		return false
 	end
-
-	print("[PortalTransportManager] 玩家 " .. player.Name .. " 与Portal交互")
 
 	-- 标记玩家为正在传送
 	playerBeingTeleported[player.UserId] = true
@@ -216,21 +203,14 @@ function PortalTransportManager:teleportToMainPlace(player)
 
 	if not teleportAttempt then
 		errorMsg = "TeleportService异常"
-		print("[PortalTransportManager] ⚠️ 传送失败: " .. tostring(errorMsg))
 	elseif not success then
 		errorMsg = "传送未成功"
-		print("[PortalTransportManager] ⚠️ 传送结果未确认: " .. tostring(errorMsg))
 	end
 
 	-- 即使传送失败，也标记玩家为已完成教程
 	-- 这是容错处理
 	if _G.TutorialCompleted then
 		_G.TutorialCompleted[player.UserId] = true
-		print("[PortalTransportManager] ! 虽然传送失败，但已标记玩家为教程完成")
-	end
-
-	if success then
-		print("[PortalTransportManager] ✓ 成功传送玩家 " .. player.Name .. " 到主场景（PlaceId: " .. mainPlaceId .. "）")
 	end
 
 	return success, errorMsg
@@ -242,7 +222,6 @@ end
 
 function PortalTransportManager:setMainPlaceId(placeId)
 	portalState.targetPlaceId = placeId
-	print("[PortalTransportManager] ✓ 已设置主场景PlaceId: " .. placeId)
 end
 
 -- ============================================
@@ -277,11 +256,9 @@ function PortalTransportManager:repositionPortal(x, y, z)
 			-- 🔧 V1.6新增：同时更新交互占位块的位置
 			if portalState.promptPart then
 				portalState.promptPart.CFrame = CFrame.new(x, y, z)
-				print("[PortalTransportManager] ✓ 已同步更新交互占位块位置")
-			end
+					end
 
-			print("[PortalTransportManager] ✓ 已将Portal重新定位到: " .. x .. ", " .. y .. ", " .. z)
-			return true
+				return true
 		end
 	elseif portal:IsA("BasePart") then
 		-- 如果Portal是单个Part
@@ -290,10 +267,8 @@ function PortalTransportManager:repositionPortal(x, y, z)
 		-- 🔧 V1.6新增：同时更新交互占位块的位置
 		if portalState.promptPart then
 			portalState.promptPart.Position = Vector3.new(x, y, z)
-			print("[PortalTransportManager] ✓ 已同步更新交互占位块位置")
-		end
+			end
 
-		print("[PortalTransportManager] ✓ 已将Portal重新定位到: " .. x .. ", " .. y .. ", " .. z)
 		return true
 	end
 
@@ -320,7 +295,6 @@ end
 function PortalTransportManager:cleanup()
 	playerBeingTeleported = {}
 	portalState.initialized = false
-	print("[PortalTransportManager] ✓ 已清理Portal传送资源")
 end
 
 -- 🔧 V1.6: 监听玩家离开事件，清理传送标记防止卡顿
@@ -329,7 +303,6 @@ local function setupPlayerLeavingHandler()
 	Players.PlayerRemoving:Connect(function(player)
 		if playerBeingTeleported[player.UserId] then
 			playerBeingTeleported[player.UserId] = nil
-			print("[PortalTransportManager] ✓ 清理玩家 " .. player.Name .. " 的传送标记")
 		end
 	end)
 end
@@ -347,7 +320,6 @@ local function setupTimeoutCleanup()
 				if not player then
 					-- 玩家已离线
 					playerBeingTeleported[userId] = nil
-					print("[PortalTransportManager] ✓ 自动清理已离线玩家的传送标记: " .. userId)
 				end
 			end
 		end

@@ -104,8 +104,6 @@ function TutorialBotService:initializeBot(npcCharacter, tableId)
 	botInstance.tableId = tableId
 	botInstance.isInitialized = true
 
-	print("[TutorialBotService] ✓ 机器人已初始化，TableId: " .. tostring(tableId))
-
 	return true
 end
 
@@ -253,8 +251,6 @@ function TutorialBotService:cleanup()
 	botInstance.character = nil
 	botInstance.tableId = nil
 	botInstance.isInitialized = false
-
-	print("[TutorialBotService] ✓ 机器人资源已清理")
 end
 
 -- ============================================

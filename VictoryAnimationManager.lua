@@ -125,13 +125,10 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
         return false
     end
 
-    print("🎭 开始为玩家 " .. player.Name .. " 播放胜利动作")
-
     -- 标记正在播放
     playingPlayers[player] = {}
 
     -- === V1.3步骤1：接触当前所坐的座位的坐下状态，变成站起来 ===
-    print("📍 步骤1：强制玩家站起来")
     humanoid.Sit = false
 
     -- 等待玩家站起来（SeatPart会由引擎自动设置为nil）
@@ -140,7 +137,6 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
     -- === V1.3步骤2：延迟0.5秒，然后禁用移动并播放动作 ===
     task.spawn(function()
         -- 等待0.5秒让玩家站起来
-        print("⏱️ 步骤2：等待0.5秒...")
         task.wait(CONFIG.DELAY_BEFORE_ANIMATION)
 
         -- 再次验证玩家状态（延迟期间可能离线）
@@ -161,8 +157,6 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
             return
         end
 
-        print("🚫 步骤2：禁用移动和跳跃")
-
         -- 保存原始移动参数
         local originalState = {
             walkSpeed = currentHumanoid.WalkSpeed > 0 and currentHumanoid.WalkSpeed or CONFIG.DEFAULT_WALK_SPEED,
@@ -174,10 +168,6 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
         currentHumanoid.WalkSpeed = 0
         currentHumanoid.JumpPower = 0
         currentHumanoid.JumpHeight = 0
-
-        print("💾 已保存原始移动参数: WalkSpeed=" .. originalState.walkSpeed ..
-              ", JumpPower=" .. originalState.jumpPower ..
-              ", JumpHeight=" .. originalState.jumpHeight)
 
         -- 加载并播放动画
         local animationId = getPlayerEmoteAnimationId(player)
@@ -211,8 +201,6 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
             humanoid = currentHumanoid
         }
 
-        print("🎬 开始播放胜利动画")
-
         -- 播放动画
         animationTrack:Play(CONFIG.FADE_TIME)
 
@@ -227,17 +215,13 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
         task.delay(CONFIG.ANIMATION_DURATION, function()
             -- 验证玩家仍然有效
             if not player or not player.Parent then
-                print("⚠️ 动作结束时玩家已离线")
                 return
             end
 
             local playerData = playingPlayers[player]
             if not playerData then
-                print("⚠️ 动作结束时未找到玩家数据")
                 return
             end
-
-            print("✅ 步骤3：恢复移动参数")
 
             -- 停止动画
             if playerData.animationTrack then
@@ -262,17 +246,10 @@ function VictoryAnimationManager.playVictoryAnimation(player, options)
                 humanoid.WalkSpeed = originalState.walkSpeed
                 humanoid.JumpPower = originalState.jumpPower
                 humanoid.JumpHeight = originalState.jumpHeight
-
-                print("🔄 已恢复移动参数: WalkSpeed=" .. originalState.walkSpeed ..
-                      ", JumpPower=" .. originalState.jumpPower ..
-                      ", JumpHeight=" .. originalState.jumpHeight)
-            else
-                warn("⚠️ 动作结束时Humanoid已无效")
             end
 
             -- 清除播放标记
             playingPlayers[player] = nil
-            print("🎉 玩家 " .. player.Name .. " 胜利动作播放完成")
         end)
     end)
 
@@ -289,8 +266,6 @@ function VictoryAnimationManager.forceStopAnimation(player)
     if not playerData then
         return  -- 没有在播放动作
     end
-
-    print("🛑 强制停止玩家 " .. player.Name .. " 的胜利动作")
 
     -- 停止动画
     if playerData.animationTrack then
@@ -348,15 +323,12 @@ function VictoryAnimationManager.initialize()
     -- 监听玩家离开，清理播放状态
     game:GetService("Players").PlayerRemoving:Connect(function(player)
         if playingPlayers[player] then
-            print("⚠️ 玩家 " .. player.Name .. " 离线时正在播放动作，执行清理")
             VictoryAnimationManager.forceStopAnimation(player)
         end
     end)
 
     -- 设置全局引用
     _G.VictoryAnimationManager = VictoryAnimationManager
-
-    print("✅ VictoryAnimationManager V1.3 初始化完成")
 end
 
 return VictoryAnimationManager

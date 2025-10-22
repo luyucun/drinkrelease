@@ -38,7 +38,6 @@ local function waitForFreshCharacter(player, timeout)
 					hrp = character:WaitForChild("HumanoidRootPart", remaining)
 				end
 				if hrp then
-					print("[DrinkSelectionManager] ✓ 获得新角色，HumanoidRootPart已就绪")
 					return character
 				end
 			end
@@ -398,7 +397,6 @@ function DrinkSelectionManager.startSelectionPhase(player1, player2)
 
 	if gameInstance and gameInstance.isTutorial then
 		-- 🔧 V1.6CRITICAL修复: 教程模式不要做循环，而是标记教程状态并继承normal流程
-		print("[DrinkSelectionManager] 教程模式开启，继承正常UI/倒计时流程，NPC自动选择由回合逻辑处理")
 
 		-- 标记教程状态，供后续逻辑使用
 		selectionState.tutorialMode = true
@@ -418,9 +416,6 @@ function DrinkSelectionManager.startSelectionPhase(player1, player2)
 
 		selectionState.realPlayer = realPlayer
 		selectionState.npcPlayer = npcPlayer
-
-		print("[DrinkSelectionManager] 教程模式：真实玩家=" .. (realPlayer and realPlayer.Name or "nil")
-			.. ", NPC=" .. (npcPlayer and npcPlayer.Name or "nil"))
 	else
 		-- 正常模式：清除教程标记
 		selectionState.tutorialMode = false
@@ -616,8 +611,6 @@ function DrinkSelectionManager.startPlayerTurn(tableId)
 	if selectionState.tutorialMode and selectionState.currentPlayer and not isRealPlayer(selectionState.currentPlayer) then
 		-- 当前玩家是NPC，启动自动选择流程
 		spawn(function()
-			print("[DrinkSelectionManager] 教程模式: 当前玩家是NPC，触发自动选择")
-
 			-- 等待一小段时间让倒计时UI在真实玩家屏幕上出现
 			wait(0.5)
 
@@ -629,7 +622,6 @@ function DrinkSelectionManager.startPlayerTurn(tableId)
 				_G.TutorialBotService:scheduleBotDrinkDecision(function(drinkIndex)
 					-- 再次检查回合是否有效
 					if selectionState.activePhase and selectionState.currentPlayer == selectionState.npcPlayer then
-						print("[DrinkSelectionManager] 教程NPC选择: " .. drinkIndex)
 						DrinkSelectionManager.onPlayerSelectDrink(selectionState.npcPlayer, drinkIndex)
 						selectionMade = true
 					end
@@ -647,7 +639,6 @@ function DrinkSelectionManager.startPlayerTurn(tableId)
 					if #selectionState.availableDrinks > 0 then
 						local randomIndex = AutoSelectRandom:NextInteger(1, #selectionState.availableDrinks)
 						local selectedDrink = selectionState.availableDrinks[randomIndex]
-						print("[DrinkSelectionManager] 教程NPC超时自动选择: " .. selectedDrink)
 						DrinkSelectionManager.onPlayerSelectDrink(selectionState.npcPlayer, selectedDrink)
 					end
 				end
@@ -1248,32 +1239,25 @@ function DrinkSelectionManager.executePlayerDeathWithEffect(player)
 	spawn(function()
 		-- 如果玩家有待处理的Portal箭头，等待复活后创建
 		if _G.PendingPortalArrow and _G.PendingPortalArrow.player == player then
-			print("[DrinkSelectionManager] 🔍 检测到待处理Portal箭头，等待玩家 " .. player.Name .. " 复活...")
-
+	
 			-- 🔧 修复：使用waitForFreshCharacter真正等待新角色出现并确保HumanoidRootPart就绪
 			local newCharacter = waitForFreshCharacter(player, 10)
 			if not newCharacter then
-				print("[DrinkSelectionManager] ⚠️ 等待新角色超时，无法创建Portal箭头")
-				-- 不清空PendingPortalArrow，留给备用方案重试
+					-- 不清空PendingPortalArrow，留给备用方案重试
 				return
 			end
 
-			print("[DrinkSelectionManager] ✓ 玩家 " .. player.Name .. " 已复活，开始创建Portal指引箭头...")
-			local pendingArrow = _G.PendingPortalArrow
+				local pendingArrow = _G.PendingPortalArrow
 
 			-- 🔧 修复：只有确认创建成功才清空PendingPortalArrow
 			if pendingArrow.player and pendingArrow.player.Parent and pendingArrow.player.Character then
-				print("[DrinkSelectionManager] ✓ 正在为玩家 " .. pendingArrow.player.Name .. " 创建Portal Beam...")
-				local success = DrinkSelectionManager.createPortalArrowForPlayer(pendingArrow.player, pendingArrow.tableId)
+					local success = DrinkSelectionManager.createPortalArrowForPlayer(pendingArrow.player, pendingArrow.tableId)
 				if success then
 					_G.PendingPortalArrow = nil  -- 只有成功才清除待处理标记
-					print("[DrinkSelectionManager] ✓ Portal Beam创建成功")
-				else
-					print("[DrinkSelectionManager] ⚠️ Portal Beam创建失败，保留待处理标记以便后续重试")
-				end
+					else
+					end
 			else
-				print("[DrinkSelectionManager] ⚠️ 玩家已离线或角色不存在，无法创建Portal箭头")
-				-- 不清空PendingPortalArrow，留给备用方案重试
+					-- 不清空PendingPortalArrow，留给备用方案重试
 			end
 		end
 	end)
@@ -1336,25 +1320,19 @@ function DrinkSelectionManager.executePlayerDeathFallback(player)
 
 			-- 检查是否有待处理的Portal箭头
 			if _G.PendingPortalArrow and _G.PendingPortalArrow.player == player then
-				print("[DrinkSelectionManager] 🔍 备用方案：复活完成，开始创建Portal指引箭头...")
-				local pendingArrow = _G.PendingPortalArrow
+					local pendingArrow = _G.PendingPortalArrow
 
 				if pendingArrow.player and pendingArrow.player.Parent and pendingArrow.player.Character then
-					print("[DrinkSelectionManager] ✓ 备用方案：正在为玩家 " .. pendingArrow.player.Name .. " 创建Portal Beam...")
-					local success = DrinkSelectionManager.createPortalArrowForPlayer(pendingArrow.player, pendingArrow.tableId)
+						local success = DrinkSelectionManager.createPortalArrowForPlayer(pendingArrow.player, pendingArrow.tableId)
 					if success then
 						_G.PendingPortalArrow = nil  -- 只有成功才清除待处理标记
-						print("[DrinkSelectionManager] ✓ 备用方案：Portal Beam创建成功")
-					else
-						print("[DrinkSelectionManager] ⚠️ 备用方案：Portal Beam创建失败，保留待处理标记")
-					end
+						else
+						end
 				else
-					print("[DrinkSelectionManager] ⚠️ 备用方案：玩家已离线或角色不存在，无法创建Portal箭头")
-					-- 不清空PendingPortalArrow
+						-- 不清空PendingPortalArrow
 				end
 			else
-				print("[DrinkSelectionManager] 🔍 备用方案：没有待处理的Portal箭头，或箭头已被清理")
-			end
+				end
 		end)
 	else
 		warn("玩家 " .. player.Name .. " 没有Humanoid")
@@ -1481,13 +1459,11 @@ function DrinkSelectionManager.showDrinkingResult(player, drinkIndex, isPoisoned
 				label.TextScaled = true
 				label.Parent = billboard
 
-				print("[DrinkSelectionManager] ✓ NPC头顶显示结果: " .. resultText)
-
+	
 				task.delay(RESULT_DISPLAY_DURATION, function()
 					if billboard and billboard.Parent then
 						billboard:Destroy()
-						print("[DrinkSelectionManager] ✓ NPC头顶结果显示已销毁")
-					end
+						end
 				end)
 			end
 		end)
@@ -1699,60 +1675,49 @@ function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 			local realPlayer = nil
 			local Players = game:GetService("Players")
 
-			print("[DrinkSelectionManager] 🔍 检查player1...")
 			if selectionState.player1 and Players:FindFirstChild(selectionState.player1.Name) then
-				print("[DrinkSelectionManager] 🔍 player1是真实玩家!")
-				realPlayer = selectionState.player1
+					realPlayer = selectionState.player1
 			end
 
 			if not realPlayer then
-				print("[DrinkSelectionManager] 🔍 检查player2...")
-				if selectionState.player2 and Players:FindFirstChild(selectionState.player2.Name) then
-					print("[DrinkSelectionManager] 🔍 player2是真实玩家!")
-					realPlayer = selectionState.player2
+					if selectionState.player2 and Players:FindFirstChild(selectionState.player2.Name) then
+						realPlayer = selectionState.player2
 				end
 			end
 
 			if realPlayer then
-				print("[DrinkSelectionManager] 🔍 找到真实玩家: " .. realPlayer.Name)
-
+	
 				-- 🔧 关键修复：根据胜负分开处理Beam创建时机
 				if reason == "poisoned" and loser then
 					-- 中毒者（loser）败北，另一个玩家（realPlayer）获胜
 					if realPlayer == loser then
 						-- 这是失败者，需要等待复活后再创建Beam
-						print("[DrinkSelectionManager] 🔍 玩家 " .. realPlayer.Name .. " 是失败者，将在复活后创建Portal指引箭头")
-
+	
 						-- 存储待处理的Portal箭头信息，以供executePlayerDeathWithEffect之后的流程使用
 						_G.PendingPortalArrow = {
 							player = realPlayer,
 							tableId = tableId,
 							createTime = tick()
 						}
-						print("[DrinkSelectionManager] ✓ 已存储失败者Portal箭头待处理信息，将在复活后创建")
-					else
+						else
 						-- 这是获胜者，立即创建Beam
-						print("[DrinkSelectionManager] 🔍 玩家 " .. realPlayer.Name .. " 是获胜者，立即创建Portal指引箭头")
-						task.delay(0.5, function()
+							task.delay(0.5, function()
 							if realPlayer and realPlayer.Parent then
 								DrinkSelectionManager.createPortalArrowForPlayer(realPlayer, tableId)
 							else
-								print("[DrinkSelectionManager] ⚠️ realPlayer已离线或无效")
-							end
+								end
 						end)
 					end
 				elseif reason == "draw" then
 					-- 平局情况：存储待处理（通常平局时没有明确的realPlayer）
-					print("[DrinkSelectionManager] 🔍 游戏平局，存储Portal箭头待处理")
-					_G.PendingPortalArrow = {
+						_G.PendingPortalArrow = {
 						player = realPlayer,
 						tableId = tableId,
 						createTime = tick()
 					}
 				else
 					-- 其他情况：备用方案，延迟创建
-					print("[DrinkSelectionManager] 🔍 游戏结束原因: " .. tostring(reason) .. "，存储Portal箭头待处理")
-					_G.PendingPortalArrow = {
+						_G.PendingPortalArrow = {
 						player = realPlayer,
 						tableId = tableId,
 						createTime = tick()
@@ -1761,11 +1726,9 @@ function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 			else
 				warn("[DrinkSelectionManager] 找不到真实玩家，无法激活Portal指引")
 				if selectionState.player1 then
-					print("[DrinkSelectionManager] 🔍 player1: " .. selectionState.player1.Name .. " (在Players中? " .. tostring(Players:FindFirstChild(selectionState.player1.Name) ~= nil) .. ")")
-				end
+						end
 				if selectionState.player2 then
-					print("[DrinkSelectionManager] 🔍 player2: " .. selectionState.player2.Name .. " (在Players中? " .. tostring(Players:FindFirstChild(selectionState.player2.Name) ~= nil) .. ")")
-				end
+						end
 			end
 		end
 	end
@@ -1990,19 +1953,15 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 					if humanoid then
 						-- 🔑 修复：检查玩家是否真的坐在座位上（有SeatPart）而不只是Sit=true
 						if humanoid.SeatPart then
-							print(string.format("✅ 胜利者 %s 真实在座位上 (SeatPart: %s)", player.Name, humanoid.SeatPart.Name))
-							-- 🔑 立即启用Leave按钮，避免玩家被困
+								-- 🔑 立即启用Leave按钮，避免玩家被困
 							gameInstance:enableLeaveButton(player)
-							print(string.format("✅ 已为玩家 %s 启用Leave按钮", player.Name))
-						else
+							else
 							-- 🔑 胜利者不在座位上，这是正常的（胜利动画结束后应该站立）
-							print(string.format("ℹ️ 胜利者 %s 未在座位上，这是正常的（动画结束后应该站立）", player.Name))
-
+	
 							-- 🔑 强制确保角色站立状态
 							if humanoid.Sit then
 								humanoid.Sit = false
-								print(string.format("🔄 强制胜利者 %s 站立，修正异常的Sit状态", player.Name))
-							end
+								end
 
 							-- 只需要确保座位可用状态已恢复，不强制坐下
 							local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
@@ -2018,8 +1977,7 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 										if part.Transparency > 0 then
 											part.Transparency = 0   -- 恢复座位可见性
 										end
-										print(string.format("✅ 已恢复座位 %s 的可用状态（玩家可自由选择是否坐下）", part.Name))
-									end
+														end
 								end
 							end
 						end
@@ -2078,8 +2036,7 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 						if humanoid1 and humanoid1.Sit then
 							gameInstance:enableLeaveButton(actualPlayer1)
 						end
-						print(string.format("✅ 玩家 %s 镜头已设置为准备状态", actualPlayer1.Name))
-					end
+						end
 				end
 
 				-- 检查player2状态
@@ -2095,12 +2052,10 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 							}
 							cameraControlEvent:FireClient(actualPlayer2, "enterPrepare", cameraData)
 							gameInstance:enableLeaveButton(actualPlayer2)
-							print(string.format("✅ 玩家 %s 镜头已恢复到准备状态", actualPlayer2.Name))
-						else
+							else
 							-- player2不在座位上（失败者在SpawnLocation），恢复默认镜头
 							cameraControlEvent:FireClient(actualPlayer2, "restore")
-							print(string.format("✅ 玩家 %s 镜头已恢复为默认状态", actualPlayer2.Name))
-						end
+							end
 					end
 				end
 			end

@@ -371,8 +371,6 @@ function PoisonSelectionManager.startPoisonPhase(player1, player2)
 
 	if gameInstance and gameInstance.isTutorial then
 		-- 🔧 CRITICAL FIX: 教程模式应该让真实玩家体验UI，只有NPC自动选择
-		print("[PoisonSelectionManager] 教程模式，真实玩家将体验UI，NPC自动选择")
-
 		-- 🔧 修复：分别处理真实玩家和NPC
 		local realPlayer = nil
 		local npcPlayer = nil
@@ -395,15 +393,12 @@ function PoisonSelectionManager.startPoisonPhase(player1, player2)
 
 		-- 🔧 修复：只为NPC自动选择，真实玩家使用正常UI流程
 		if npcPlayer then
-			print("[PoisonSelectionManager] NPC自动选择毒药")
-			_G.TutorialBotService:scheduleBotPoisonDecision(function(choice)
+				_G.TutorialBotService:scheduleBotPoisonDecision(function(choice)
 				poisonState.playerSelections[npcPlayer] = choice
 				poisonState.completedPlayers[npcPlayer] = true
-				print("[PoisonSelectionManager] NPC选择毒药: " .. choice)
 
 				-- 检查是否两个玩家都已完成
 				if poisonState.completedPlayers[realPlayer] and poisonState.completedPlayers[npcPlayer] then
-					print("[PoisonSelectionManager] 教程毒药阶段完成，进入下一阶段")
 					PoisonSelectionManager.finishPoisonPhase(tableId)
 				end
 			end)
@@ -411,8 +406,7 @@ function PoisonSelectionManager.startPoisonPhase(player1, player2)
 
 		-- 🔧 修复：为真实玩家启动正常的UI流程和倒计时
 		if realPlayer then
-			print("[PoisonSelectionManager] 为真实玩家启动毒药选择UI")
-			-- V1.4: 启动毒药阶段倒计时
+				-- V1.4: 启动毒药阶段倒计时
 			PoisonSelectionManager.startPoisonPhaseCountdown(tableId, realPlayer, npcPlayer)
 			-- 为真实玩家显示选择UI
 			PoisonSelectionManager.showSelectionUI(realPlayer)
@@ -497,7 +491,6 @@ function PoisonSelectionManager.showConfirmationDialog(player, drinkIndex)
 		local gameInstance = _G.TableManager and _G.TableManager.getTableInstance(tableId)
 		if gameInstance and gameInstance.isTutorial then
 			-- 教程模式下直接跳过确认，执行毒药注入
-			print("[PoisonSelectionManager] 教程模式：跳过确认弹框，直接执行毒药注入")
 			PoisonSelectionManager.startPoisonInjectionEffect(player, drinkIndex, tableId)
 			return
 		end
@@ -1009,8 +1002,6 @@ function PoisonSelectionManager.finishPoisonPhase(tableId)
 
 	-- 🔧 V1.6修复: 教程模式下为真实玩家补齐镜头和提示
 	if gameInstance and gameInstance.isTutorial then
-		print("[PoisonSelectionManager] 教程模式：毒药阶段完成，准备进入选择阶段")
-
 		-- 识别真实玩家和NPC
 		local realPlayer = nil
 		local npcPlayer = nil
@@ -1054,15 +1045,13 @@ function PoisonSelectionManager.finishPoisonPhase(tableId)
 
 						-- 发送进入选择阶段的镜头命令
 						cameraControlEvent:FireClient(realPlayer, "enterSelect", cameraData)
-						print("[PoisonSelectionManager] ✓ 为真实玩家发送enterSelect镜头命令")
-					end
+						end
 				end
 			end
 		end
 
 		-- 不显示Props面板
-		print("[PoisonSelectionManager] 教程模式：跳过显示Props面板")
-	else
+		else
 		-- 只在非教程模式下显示道具界面
 		-- 显示道具界面给双方玩家（只给该桌子玩家）
 		PoisonSelectionManager.showPropsUIForPlayers(poisonState.player1, poisonState.player2)

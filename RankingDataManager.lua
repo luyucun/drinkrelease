@@ -321,8 +321,6 @@ function RankingDataManager.savePlayerDataAsync(player, data, onFailure)
 			if onFailure then
 				onFailure("save_failed")
 			end
-		else
-			print("✅ 异步保存成功: " .. player.Name)
 		end
 	end)
 
@@ -355,8 +353,6 @@ function RankingDataManager.recordGameResult(player, isWinner)
 		return false
 	end
 
-	print("🎯 记录游戏结果: " .. player.Name .. " - " .. (isWinner and "获胜" or "失败"))
-
 	-- 获取玩家当前数据
 	local playerData = RankingDataManager.getPlayerRankingData(player)
 	if not playerData then
@@ -378,11 +374,9 @@ function RankingDataManager.recordGameResult(player, isWinner)
 		-- 胜利：总胜利数+1，连胜数+1
 		newData.totalWins = newData.totalWins + 1
 		newData.consecutiveWins = newData.consecutiveWins + 1
-		print("📈 " .. player.Name .. " 获胜: 总胜利 " .. originalTotalWins .. "→" .. newData.totalWins .. ", 连胜 " .. originalConsecutiveWins .. "→" .. newData.consecutiveWins)
 	else
 		-- 失败：连胜数重置为0，总胜利数不变
 		newData.consecutiveWins = 0
-		print("📉 " .. player.Name .. " 失败: 总胜利保持 " .. newData.totalWins .. ", 连胜 " .. originalConsecutiveWins .. "→0")
 	end
 
 	-- 更新最后游戏时间
@@ -392,12 +386,9 @@ function RankingDataManager.recordGameResult(player, isWinner)
 	-- 🔧 关键修复：先尝试立即同步保存（关键游戏数据）
 	local immediateSaveSuccess = false
 	if rankingDataStore then
-		print("💾 尝试立即保存关键游戏数据...")
 		immediateSaveSuccess = RankingDataManager.savePlayerData(player, newData, 3) -- 最多重试3次
 
-		if immediateSaveSuccess then
-			print("✅ 立即保存成功: " .. player.Name)
-		else
+		if not immediateSaveSuccess then
 			warn("⚠️ 立即保存失败: " .. player.Name .. "，数据已缓存，将通过备用机制保存")
 		end
 	else
@@ -431,15 +422,12 @@ function RankingDataManager.recordGameResult(player, isWinner)
 				-- 检查缓存中的数据是否仍然是我们要保存的数据
 				local currentCachedData = RankingDataManager.playerRankingCache[player]
 				if not currentCachedData or currentCachedData.lastGameTime ~= newData.lastGameTime then
-					print("ℹ️ 玩家 " .. player.Name .. " 数据已被新游戏更新，停止旧数据重试")
 					break
 				end
 
-				print("🔄 第 " .. retryAttempts .. " 次重试保存: " .. player.Name)
 				local retrySuccess = RankingDataManager.savePlayerData(player, newData, 2)
 
 				if retrySuccess then
-					print("✅ 重试保存成功: " .. player.Name .. " (第 " .. retryAttempts .. " 次)")
 					break
 				else
 					warn("⚠️ 第 " .. retryAttempts .. " 次重试失败: " .. player.Name)
@@ -988,7 +976,6 @@ function RankingDataManager.setupPeriodicSave()
 				if success then
 					RankingDataManager.dirtyPlayers[playerInfo.player] = nil -- 只有成功时才清除dirty标记
 					successCount = successCount + 1
-					print("✅ 定期保存成功: " .. playerInfo.player.Name)
 				else
 					-- 保存失败，保留脏标记，下次重试
 					table.insert(failedPlayers, playerInfo.player.Name)
@@ -1002,7 +989,6 @@ function RankingDataManager.setupPeriodicSave()
 			end
 
 			if saveCount > 0 then
-				print("🔄 定期保存周期完成: " .. successCount .. "/" .. saveCount .. " 成功")
 				if #failedPlayers > 0 then
 					warn("⚠️ 失败的玩家将在下次周期重试: " .. table.concat(failedPlayers, ", "))
 				end
@@ -1191,9 +1177,7 @@ function RankingDataManager.initialize()
 
 	-- 验证DataStore状态
 	if isStudio then
-		print("🏠 Studio环境：运行在内存模式")
 	elseif rankingDataStore and globalRankingStore then
-		print("💾 DataStore模式已启用")
 	else
 		warn("⚠️ RankingDataManager: DataStore不可用，运行在内存模式")
 	end
@@ -1229,7 +1213,6 @@ function RankingDataManager.initialize()
 			if success and topPlayers then
 				RankingDataManager.offlinePlayersCache.topPlayers = topPlayers
 				RankingDataManager.offlinePlayersCache.lastFetchTime = tick()
-				print("✅ 离线玩家数据预加载完成")
 			else
 				warn("⚠️ 预加载离线玩家数据失败: " .. tostring(topPlayers))
 				-- 失败时设置空表，避免nil错误
@@ -1246,8 +1229,6 @@ function RankingDataManager.initialize()
 		wait(3) -- 等待系统稳定
 
 		if _G.PendingGameResults and #_G.PendingGameResults > 0 then
-			print("🔄 发现 " .. #_G.PendingGameResults .. " 个待处理的游戏结果，开始处理...")
-
 			local processedCount = 0
 			local expiredCount = 0
 
@@ -1276,7 +1257,6 @@ function RankingDataManager.initialize()
 						if success then
 							table.remove(_G.PendingGameResults, i)
 							processedCount = processedCount + 1
-							print("✅ 成功处理初始化时的待处理结果: " .. result.winner.Name .. " vs " .. result.loser.Name)
 						else
 							warn("⚠️ 处理待处理结果失败: " .. result.winner.Name .. " vs " .. result.loser.Name)
 						end
@@ -1286,13 +1266,6 @@ function RankingDataManager.initialize()
 						warn("⚠️ 玩家已离线，移除游戏结果: " .. (result.winner and result.winner.Name or "未知") .. " vs " .. (result.loser and result.loser.Name or "未知"))
 					end
 				end
-			end
-
-			if processedCount > 0 then
-				print("🎉 初始化时成功处理 " .. processedCount .. " 个待处理的游戏结果")
-			end
-			if expiredCount > 0 then
-				print("🗑️ 清理了 " .. expiredCount .. " 个过期的游戏结果")
 			end
 		end
 	end)

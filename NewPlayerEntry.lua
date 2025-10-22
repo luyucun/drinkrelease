@@ -103,21 +103,18 @@ print("[NewPlayerEntry] ✓ NPC机器人已初始化")
 -- ============================================
 
 local function setupNPCSeating()
-	print("[NewPlayerEntry] 开始设置NPC坐下...")
 
 	local chair1 = tableFolder:FindFirstChild(TUTORIAL_CONFIG.CHAIR1_NAME)
 	if not chair1 then
 		warn("[NewPlayerEntry] 找不到ClassicChair1")
 		return false
 	end
-	print("[NewPlayerEntry] ✓ 找到ClassicChair1")
 
 	local seat1 = chair1:FindFirstChild("Seat")
 	if not seat1 or not seat1:IsA("Seat") then
 		warn("[NewPlayerEntry] ClassicChair1下找不到Seat")
 		return false
 	end
-	print("[NewPlayerEntry] ✓ 找到Seat，类型: " .. seat1.ClassName)
 
 	-- 检查NPC模型结构
 	local humanoid = npcModel:FindFirstChild("Humanoid")
@@ -125,23 +122,18 @@ local function setupNPCSeating()
 		warn("[NewPlayerEntry] NPC模型没有Humanoid")
 		return false
 	end
-	print("[NewPlayerEntry] ✓ 找到NPC Humanoid")
 
 	local rootPart = npcModel:FindFirstChild("HumanoidRootPart") or npcModel:FindFirstChild("Torso")
 	if not rootPart then
 		warn("[NewPlayerEntry] NPC模型没有HumanoidRootPart或Torso")
 		return false
 	end
-	print("[NewPlayerEntry] ✓ 找到NPC RootPart: " .. rootPart.Name)
 
 	-- 🔧 修复：确保座位未被禁用且可用
 	if seat1.Disabled then
-		print("[NewPlayerEntry] 座位被禁用，正在启用...")
 		seat1.Disabled = false
 	end
 
-	-- 🔧 关键修复：让NPC自然地走到座位并坐下，而不是强制传送
-	print("[NewPlayerEntry] 正在让NPC自然坐下...")
 
 	-- 1. 确保NPC在站立状态
 	humanoid.Sit = false
@@ -159,8 +151,6 @@ local function setupNPCSeating()
 	-- 3. 等待物理引擎稳定
 	wait(0.3)
 
-	-- 4. 直接让NPC坐下（已经在正确位置，无需移动）
-	print("[NewPlayerEntry] 触发坐下...")
 
 	-- 方法1：使用Seat:Sit()
 	seat1:Sit(humanoid)
@@ -174,7 +164,6 @@ local function setupNPCSeating()
 
 	-- 验证是否成功坐下
 	if seat1.Occupant == humanoid and humanoid.Sit then
-		print("[NewPlayerEntry] ✅ NPC成功坐到ClassicChair1（自然坐姿）")
 		return true
 	else
 		warn("[NewPlayerEntry] ⚠️ NPC坐下失败")
@@ -182,7 +171,6 @@ local function setupNPCSeating()
 		warn("  Humanoid.Sit: " .. tostring(humanoid.Sit))
 
 		-- 🔧 最后的备用方案：完全对齐座位CFrame
-		print("[NewPlayerEntry] 使用座位CFrame对齐方案...")
 
 		-- 直接将NPC的RootPart对齐到座位的CFrame
 		-- 座位会自动调整角色到正确的坐姿位置
@@ -195,7 +183,6 @@ local function setupNPCSeating()
 		wait(0.3)
 
 		if seat1.Occupant == humanoid then
-			print("[NewPlayerEntry] ✅ CFrame对齐方案成功")
 			return true
 		else
 			warn("[NewPlayerEntry] ❌ 所有坐下方案都失败")
@@ -205,9 +192,7 @@ local function setupNPCSeating()
 end
 
 -- 🔧 修复：延迟执行NPC坐下，确保场景完全加载
-print("[NewPlayerEntry] 等待场景稳定...")
 wait(1)  -- 给场景1秒时间完全加载
-print("[NewPlayerEntry] 执行NPC坐下...")
 setupNPCSeating()
 
 -- ============================================
@@ -215,7 +200,6 @@ setupNPCSeating()
 -- ============================================
 
 local function onPlayerAdded(player)
-	print("[NewPlayerEntry] 玩家加入: " .. player.Name)
 
 	-- 埋点1：玩家进入Newplayer
 	TutorialAnalyticsService:trackPlayerEnterNewplayer(player)
@@ -232,13 +216,10 @@ local function onPlayerAdded(player)
 
 	-- 创建引导箭头
 	TutorialGuideManager:showGuidingArrow(player, chair2:FindFirstChild("Seat"))
-
-	print("[NewPlayerEntry] ✓ 已为玩家 " .. player.Name .. " 显示引导箭头")
 end
 
 -- 玩家离开处理
 local function onPlayerRemoving(player)
-	print("[NewPlayerEntry] 玩家离开: " .. player.Name)
 
 	-- 清理引导箭头
 	TutorialGuideManager:cleanupOnPlayerLeaving(player)
@@ -276,14 +257,12 @@ local function waitForGameInstance()
 			if gameInstance then
 				-- 标记为教程模式
 				gameInstance.isTutorial = true
-				print("[NewPlayerEntry] ✓ GameInstance已获取并标记为教程模式")
 
 				-- 🔧 V1.6: 初始化教程环境管理器，缓存Chair2 Seat
 				if TutorialEnvironmentManager then
 					local chair2 = tableFolder:FindFirstChild(TUTORIAL_CONFIG.CHAIR2_NAME)
 					if chair2 then
 						TutorialEnvironmentManager:initializeTutorialSeat(chair2)
-						print("[NewPlayerEntry] ✓ 教程环境管理器已初始化")
 					else
 						warn("[NewPlayerEntry] 无法找到Chair2，无法初始化座位缓存")
 					end
@@ -329,16 +308,14 @@ local function setupSeatMonitoring()
 				local player = Players:GetPlayerFromCharacter(character)
 
 				if player then
-					print("[NewPlayerEntry] 玩家 " .. player.Name .. " 已坐下")
-
+	
 					-- 埋点2：玩家坐下
 					TutorialAnalyticsService:trackPlayerSitDown(player)
 
 					-- 销毁引导箭头
 					TutorialGuideManager:hideGuidingArrow(player)
 
-					print("[NewPlayerEntry] ✓ 已销毁玩家 " .. player.Name .. " 的引导箭头")
-				end
+					end
 			end
 		end
 	end)
@@ -368,7 +345,6 @@ local function setupPortalInteraction()
 
 	-- 辅助函数：处理Portal交互的公共逻辑
 	local function handlePortalInteraction(player)
-		print("[NewPlayerEntry] 玩家 " .. player.Name .. " 与Portal交互")
 
 		-- 🔧 V1.6: 检查游戏是否已经完成
 		local gameInstance = _G.TableManager and _G.TableManager.getTableInstance(botTableId) or nil
@@ -385,13 +361,11 @@ local function setupPortalInteraction()
 				gameResult = "not_started"
 			else
 				-- 游戏尚未完成，提示玩家等待
-				print("[NewPlayerEntry] 游戏尚未完成，当前阶段: " .. (gameInstance.gameState.gamePhase or "unknown"))
-				gameResult = "incomplete"
+					gameResult = "incomplete"
 			end
 		else
 			-- 无法获取游戏状态，可能是GameInstance尚未初始化
-			print("[NewPlayerEntry] ⚠️ 无法获取游戏状态，允许传送")
-			gameResult = "unknown"
+				gameResult = "unknown"
 		end
 
 		-- 🔧 CRITICAL FIX: 统一内存和持久化状态逻辑
@@ -400,15 +374,12 @@ local function setupPortalInteraction()
 			-- 标记为已完成教程（内存和持久化都设置）
 			_G.TutorialCompleted[player.UserId] = true
 			PlayerDataService:setTutorialCompleted(player, true)
-			print("[NewPlayerEntry] ✓ 游戏已完成，标记玩家为老玩家")
 
 			-- 🔧 V1.6: 移除教程座位，强制玩家前往下一个场景
 			if TutorialEnvironmentManager then
 				TutorialEnvironmentManager:removeTutorialSeat()
-				print("[NewPlayerEntry] ✓ 教程座位已移除")
 			end
 		else
-			print("[NewPlayerEntry] ⚠️ 游戏未完成(" .. gameResult .. ")，玩家下次仍为新玩家")
 			-- 不设置任何完成标记，保持newPlayerCompleted = false
 		end
 
@@ -418,8 +389,7 @@ local function setupPortalInteraction()
 		-- 🔧 V1.6新增：清理Portal指引箭头（在传送前）
 		if TutorialGuideManager then
 			TutorialGuideManager:hidePortalArrow(player)
-			print("[NewPlayerEntry] ✓ 已清理玩家 " .. player.Name .. " 的Portal指引箭头")
-		end
+			end
 
 		-- 触发传送
 		task.delay(1, function()
@@ -440,8 +410,7 @@ local function setupPortalInteraction()
 
 	if clickDetector then
 		clickDetector.MouseClick:Connect(function(player)
-			print("[NewPlayerEntry] 玩家 " .. player.Name .. " 点击了Portal")
-			handlePortalInteraction(player)
+				handlePortalInteraction(player)
 		end)
 	end
 
@@ -452,11 +421,9 @@ local function setupPortalInteraction()
 		local prompt = promptPart:FindFirstChildOfClass("ProximityPrompt")
 		if prompt then
 			prompt.Triggered:Connect(function(player)
-				print("[NewPlayerEntry] 玩家 " .. player.Name .. " 通过ProximityPrompt与Portal交互（长按E键）")
-				handlePortalInteraction(player)
+					handlePortalInteraction(player)
 			end)
-			print("[NewPlayerEntry] ✓ ProximityPrompt事件监听已设置（绑定到交互占位块）")
-		else
+			else
 			warn("[NewPlayerEntry] ⚠️ 交互占位块上未找到ProximityPrompt")
 		end
 	else

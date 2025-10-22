@@ -35,7 +35,6 @@ function TutorialGuideManager:showGuidingArrow(player, targetSeat)
 
 	-- 检查是否已有箭头
 	if playerArrows[playerId] then
-		print("[TutorialGuideManager] 玩家 " .. player.Name .. " 已有引导箭头，跳过重复创建")
 		return false
 	end
 
@@ -80,8 +79,6 @@ function TutorialGuideManager:showGuidingArrow(player, targetSeat)
 		attachmentOnPlayer = playerAttachment
 	}
 
-	print("[TutorialGuideManager] ✓ 为玩家 " .. player.Name .. " 创建了引导箭头")
-
 	return true
 end
 
@@ -95,7 +92,6 @@ function TutorialGuideManager:hideGuidingArrow(player)
 	local playerId = player.UserId
 
 	if not playerArrows[playerId] then
-		print("[TutorialGuideManager] 玩家 " .. player.Name .. " 没有引导箭头，无需销毁")
 		return false
 	end
 
@@ -124,8 +120,6 @@ function TutorialGuideManager:hideGuidingArrow(player)
 
 	-- 清理缓存
 	playerArrows[playerId] = nil
-
-	print("[TutorialGuideManager] ✓ 为玩家 " .. player.Name .. " 销毁了引导箭头")
 
 	return true
 end
@@ -216,10 +210,6 @@ function TutorialGuideManager:showPortalArrow(player, portalAttachment)
 
 	if not portalAttachment or not portalAttachment:IsA("Attachment") then
 		warn("[TutorialGuideManager] 无效的Portal Attachment对象")
-		print("[TutorialGuideManager] 🔍 portalAttachment = " .. tostring(portalAttachment))
-		if portalAttachment then
-			print("[TutorialGuideManager] 🔍 portalAttachment.ClassName = " .. portalAttachment.ClassName)
-		end
 		return false
 	end
 
@@ -227,13 +217,9 @@ function TutorialGuideManager:showPortalArrow(player, portalAttachment)
 
 	-- 🔧 幂等保护：检查是否已有Portal箭头
 	if portalArrows[playerId] then
-		print("[TutorialGuideManager] 玩家 " .. player.Name .. " 已有Portal引导箭头，跳过重复创建")
 		return false
 	end
 
-	print("[TutorialGuideManager] 🔍 开始创建Portal箭头...")
-	print("[TutorialGuideManager] 🔍 玩家Character: " .. tostring(character))
-	print("[TutorialGuideManager] 🔍 玩家HumanoidRootPart: " .. tostring(humanoidRootPart))
 
 	-- 获取Arrow模板
 	local arrowFolder = ReplicatedStorage:FindFirstChild("Arrow")
@@ -248,42 +234,20 @@ function TutorialGuideManager:showPortalArrow(player, portalAttachment)
 		return false
 	end
 
-	print("[TutorialGuideManager] 🔍 找到Arrow_A和Beam模板")
 
 	-- 克隆Beam
 	local beamTemplate = arrowABeam:FindFirstChild("Beam")
 
-	-- 🔧 调试：检查模板Beam的属性
-	print("[TutorialGuideManager] 🔍 ===== 模板Beam属性 =====")
-	print("[TutorialGuideManager] 🔍 beamTemplate.Parent = " .. tostring(beamTemplate.Parent))
-	print("[TutorialGuideManager] 🔍 beamTemplate.Enabled = " .. tostring(beamTemplate.Enabled))
-	print("[TutorialGuideManager] 🔍 beamTemplate.Transparency = " .. tostring(beamTemplate.Transparency))
-	print("[TutorialGuideManager] 🔍 beamTemplate.Attachment0 = " .. tostring(beamTemplate.Attachment0))
-	print("[TutorialGuideManager] 🔍 beamTemplate.Attachment1 = " .. tostring(beamTemplate.Attachment1))
-
 	local beam = beamTemplate:Clone()
-	print("[TutorialGuideManager] 🔍 已克隆Beam")
-
-	-- 🔧 调试：检查克隆后Beam的属性
-	print("[TutorialGuideManager] 🔍 ===== 克隆后Beam属性 =====")
-	print("[TutorialGuideManager] 🔍 beam.Parent = " .. tostring(beam.Parent))
-	print("[TutorialGuideManager] 🔍 beam.Enabled = " .. tostring(beam.Enabled))
-	print("[TutorialGuideManager] 🔍 beam.Transparency = " .. tostring(beam.Transparency))
-	print("[TutorialGuideManager] 🔍 beam.Attachment0 = " .. tostring(beam.Attachment0))
-	print("[TutorialGuideManager] 🔍 beam.Attachment1 = " .. tostring(beam.Attachment1))
 
 	-- 在玩家身上创建Attachment02
 	local playerAttachment = Instance.new("Attachment")
 	playerAttachment.Name = "PortalArrowAttachment"
 	playerAttachment.Parent = humanoidRootPart
-	print("[TutorialGuideManager] 🔍 已在玩家身上创建Attachment")
-	print("[TutorialGuideManager] 🔍 playerAttachment.Parent = " .. tostring(playerAttachment.Parent))
-	print("[TutorialGuideManager] 🔍 playerAttachment在玩家Character中? " .. tostring(playerAttachment.Parent:IsDescendantOf(character)))
 
 	-- 配置Beam的连接点：Attachment0指向Portal，Attachment1指向玩家
 	beam.Attachment0 = portalAttachment
 	beam.Attachment1 = playerAttachment
-	print("[TutorialGuideManager] 🔍 已配置Beam连接点 - Attachment0: " .. tostring(beam.Attachment0) .. ", Attachment1: " .. tostring(beam.Attachment1))
 
 	-- 🔧 关键修复：强制设置Beam为可见状态
 	-- 问题：克隆的Beam可能有透明度序列，导致部分透明
@@ -299,40 +263,24 @@ function TutorialGuideManager:showPortalArrow(player, portalAttachment)
 		beam.Color = beamTemplate.Color
 	end
 
-	print("[TutorialGuideManager] 🔧 强制设置Beam属性 - Transparency=" .. tostring(beam.Transparency) .. ", Color=" .. tostring(beam.Color))
 
 	-- 🔧 关键修复：确保Beam没有其他Parent
 	-- 如果Beam从某个地方克隆而来可能仍然有Parent引用
 	-- 必须先将其从当前Parent移除
 	if beam.Parent then
-		print("[TutorialGuideManager] ⚠️ Beam有Parent，正在移除: " .. tostring(beam.Parent.Name))
 		beam.Parent = nil
 	end
 
-	-- 🔧 调试：验证Attachment位置
-	print("[TutorialGuideManager] 🔍 Portal Attachment世界坐标: " .. tostring(portalAttachment.WorldPosition))
-	print("[TutorialGuideManager] 🔍 玩家Attachment世界坐标: " .. tostring(playerAttachment.WorldPosition))
-	local attachDistance = (portalAttachment.WorldPosition - playerAttachment.WorldPosition).Magnitude
-	print("[TutorialGuideManager] 🔍 两个Attachment距离: " .. tostring(attachDistance) .. " 单位")
 
 	-- 将Beam放到Workspace中，确保可见
 	-- 🔧 修复：不要放在Portal下，直接放在Workspace或ReplicatedStorage中
 	beam.Parent = game:GetService("Workspace")
-	print("[TutorialGuideManager] 🔍 已将Beam设置到Workspace")
-
-	-- 🔧 调试：验证Beam是否成功创建并有Parent
-	print("[TutorialGuideManager] 🔍 设置后 - Beam.Parent = " .. tostring(beam.Parent))
-	print("[TutorialGuideManager] 🔍 设置后 - Beam.Enabled = " .. tostring(beam.Enabled))
-	print("[TutorialGuideManager] 🔍 设置后 - Beam.Attachment0 = " .. tostring(beam.Attachment0))
-	print("[TutorialGuideManager] 🔍 设置后 - Beam.Attachment1 = " .. tostring(beam.Attachment1))
 
 	-- 保存Portal箭头数据
 	portalArrows[playerId] = {
 		beam = beam,
 		attachmentOnPlayer = playerAttachment
 	}
-
-	print("[TutorialGuideManager] ✓ 为玩家 " .. player.Name .. " 创建了Portal引导箭头")
 
 	return true
 end
@@ -347,7 +295,6 @@ function TutorialGuideManager:hidePortalArrow(player)
 	local playerId = player.UserId
 
 	if not portalArrows[playerId] then
-		print("[TutorialGuideManager] 玩家 " .. player.Name .. " 没有Portal引导箭头，无需销毁")
 		return false
 	end
 
@@ -369,8 +316,6 @@ function TutorialGuideManager:hidePortalArrow(player)
 
 	-- 清理缓存
 	portalArrows[playerId] = nil
-
-	print("[TutorialGuideManager] ✓ 为玩家 " .. player.Name .. " 销毁了Portal引导箭头")
 
 	return true
 end
