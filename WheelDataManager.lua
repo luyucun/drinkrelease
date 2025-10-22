@@ -208,6 +208,15 @@ function WheelDataManager.addSpinCount(player, count, source)
 	return true
 end
 
+-- V1.7: 从邀请奖励增加转盘次数
+function WheelDataManager.addSpinsFromInviteReward(player, count)
+	if not player or count <= 0 then
+		return false
+	end
+
+	return WheelDataManager.addSpinCount(player, count, "invite_reward")
+end
+
 -- 使用转盘次数
 function WheelDataManager.useSpinCount(player)
 	if not playerWheelData[player] then

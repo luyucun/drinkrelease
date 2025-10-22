@@ -878,6 +878,14 @@ function GameInstance:startPoisonPhase()
 	self:sendCameraControl(self.gameState.player1, "enterPoison")
 	self:sendCameraControl(self.gameState.player2, "enterPoison")
 
+	-- V1.7: 更新房间好友信息
+	if _G.FriendsService and not _G.TutorialMode then
+		local players = {}
+		if self.gameState.player1 then table.insert(players, self.gameState.player1) end
+		if self.gameState.player2 then table.insert(players, self.gameState.player2) end
+		_G.FriendsService:updateRoomFriends(self.tableId, players)
+	end
+
 	-- 安全地加载并调用PoisonSelectionManager
 	local poisonManager = loadPoisonSelectionManager()
 	if poisonManager and poisonManager.startPoisonPhase then
@@ -1088,6 +1096,11 @@ function GameInstance:resetToWaiting()
 
 	-- 禁用AirWall，恢复自由通行
 	self:disableAirWalls()
+
+	-- V1.7: 清理房间好友缓存
+	if _G.FriendsService then
+		_G.FriendsService:clearRoomCache(self.tableId)
+	end
 
 	-- 为仍在座位上的玩家显示Menu界面（退出对局状态）
 	-- 使用特定菜单配置：只显示shop按钮

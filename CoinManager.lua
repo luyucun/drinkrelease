@@ -344,6 +344,24 @@ function CoinManager.updatePlayerCoinUI(player)
 	end)
 end
 
+-- V1.7: 发放金币奖励（带好友加成）
+function CoinManager.giveCoinsReward(player, baseCoins, tableId, reason)
+	if not player or not baseCoins or baseCoins <= 0 then return false end
+
+	local finalCoins = baseCoins
+
+	-- 应用好友加成
+	if _G.FriendsService and tableId then
+		local bonus = _G.FriendsService:getRoomFriendsBonus(player, tableId)
+		finalCoins = math.floor(baseCoins * (1 + bonus))
+		if bonus > 0 then
+			print("[CoinManager] 玩家 " .. player.Name .. " 获得好友加成: " .. (bonus * 100) .. "%, " .. baseCoins .. " -> " .. finalCoins)
+		end
+	end
+
+	return CoinManager.addCoins(player, finalCoins, reason or "游戏奖励")
+end
+
 -- 奖励安全饮用
 function CoinManager.rewardSafeDrinking(player)
 	if not player then return false end
