@@ -415,6 +415,12 @@ local function setupPortalInteraction()
 		-- 埋点3：Portal交互
 		TutorialAnalyticsService:trackPortalInteraction(player, gameResult)
 
+		-- 🔧 V1.6新增：清理Portal指引箭头（在传送前）
+		if TutorialGuideManager then
+			TutorialGuideManager:hidePortalArrow(player)
+			print("[NewPlayerEntry] ✓ 已清理玩家 " .. player.Name .. " 的Portal指引箭头")
+		end
+
 		-- 触发传送
 		task.delay(1, function()
 			if player and player.Parent then

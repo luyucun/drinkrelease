@@ -13,6 +13,7 @@ local RunService = game:GetService("RunService")
 local portalState = {
 	portal = nil,
 	promptPart = nil,  -- 🔧 V1.6新增：独立交互占位块
+	effectPart = nil,  -- 🔧 V1.6新增：Portal.effect Part
 	initialized = false,
 	targetPlaceId = nil
 }
@@ -106,6 +107,37 @@ function PortalTransportManager:initializePortal(targetPlaceId)
 
 	-- 保存占位块引用以便后续更新
 	portalState.promptPart = promptPart
+
+	-- 🔧 V1.6新增：准备Portal的effect Attachment，用于引导箭头
+	-- Portal.Base 是指定的容器Part，我们需要在它下面找到或创建 Attachment01
+	local effectPart = portal:FindFirstChild("Base")
+
+	if not effectPart then
+		-- 如果Portal下没有名叫Base的Part，创建一个
+		effectPart = Instance.new("Part")
+		effectPart.Name = "Base"
+		effectPart.Transparency = 1  -- 完全透明
+		effectPart.CanCollide = false
+		effectPart.Size = Vector3.new(1, 1, 1)
+		effectPart.Parent = portal
+		print("[PortalTransportManager] ✓ 已创建Portal Base Part")
+	else
+		print("[PortalTransportManager] ✓ 找到Portal.Base Part")
+	end
+
+	-- 在 Base Part 下查找或创建 Attachment
+	local effectAttachment = effectPart:FindFirstChildOfClass("Attachment")
+	if not effectAttachment then
+		effectAttachment = Instance.new("Attachment")
+		effectAttachment.Name = "Attachment01"
+		effectAttachment.Parent = effectPart
+		print("[PortalTransportManager] ✓ 已在Portal.Base下创建Attachment01")
+	else
+		print("[PortalTransportManager] ✓ Portal.Base.Attachment已存在")
+	end
+
+	-- 保存 Base Part 的引用，便于后续使用
+	portalState.effectPart = effectPart
 
 	-- 保存状态
 	portalState.portal = portal

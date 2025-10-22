@@ -21,6 +21,49 @@ local function isRealPlayer(player)
 	return true
 end
 
+-- 🔧 V1.6修复：真正等待新角色出现并确保关键组件就绪
+-- 关键：记录初始角色，确保返回的是新角色而不是旧角色
+local function waitForFreshCharacter(player, timeout)
+	local startCharacter = player.Character
+	local deadline = tick() + (timeout or 10)
+
+	while tick() < deadline do
+		local character = player.Character
+		if character and character.Parent then
+			-- 🔧 关键检查：确保获得的是新角色（已切换）或旧角色已移除
+			if character ~= startCharacter then
+				local remaining = math.max(deadline - tick(), 0)
+				local hrp = character:FindFirstChild("HumanoidRootPart")
+				if not hrp then
+					hrp = character:WaitForChild("HumanoidRootPart", remaining)
+				end
+				if hrp then
+					print("[DrinkSelectionManager] ✓ 获得新角色，HumanoidRootPart已就绪")
+					return character
+				end
+			end
+		end
+
+		-- 检查玩家是否已离开游戏
+		if not player.Parent then
+			warn("[DrinkSelectionManager] 玩家 " .. player.Name .. " 已离开游戏")
+			break
+		end
+
+		-- 等待新角色生成事件
+		local ok, newCharacter = pcall(function()
+			return player.CharacterAdded:Wait()
+		end)
+		if not ok then
+			warn("[DrinkSelectionManager] 等待CharacterAdded事件失败")
+			break
+		end
+	end
+
+	warn(string.format("[DrinkSelectionManager] 等待玩家 %s 复活超时 (timeout: %.1fs)", player.Name, timeout or 10))
+	return nil
+end
+
 -- 结果显示时长配置
 local RESULT_DISPLAY_DURATION = 0.5  -- Safe/Poison 文本显示时长（秒）
 
@@ -1200,6 +1243,40 @@ function DrinkSelectionManager.executePlayerDeathWithEffect(player)
 		return
 	end
 
+	-- 🔧 V1.6新增：启动Portal Beam创建监视器（在复活后创建）
+	-- 这是为了处理有待处理Portal箭头的情况
+	spawn(function()
+		-- 如果玩家有待处理的Portal箭头，等待复活后创建
+		if _G.PendingPortalArrow and _G.PendingPortalArrow.player == player then
+			print("[DrinkSelectionManager] 🔍 检测到待处理Portal箭头，等待玩家 " .. player.Name .. " 复活...")
+
+			-- 🔧 修复：使用waitForFreshCharacter真正等待新角色出现并确保HumanoidRootPart就绪
+			local newCharacter = waitForFreshCharacter(player, 10)
+			if not newCharacter then
+				print("[DrinkSelectionManager] ⚠️ 等待新角色超时，无法创建Portal箭头")
+				-- 不清空PendingPortalArrow，留给备用方案重试
+				return
+			end
+
+			print("[DrinkSelectionManager] ✓ 玩家 " .. player.Name .. " 已复活，开始创建Portal指引箭头...")
+			local pendingArrow = _G.PendingPortalArrow
+
+			-- 🔧 修复：只有确认创建成功才清空PendingPortalArrow
+			if pendingArrow.player and pendingArrow.player.Parent and pendingArrow.player.Character then
+				print("[DrinkSelectionManager] ✓ 正在为玩家 " .. pendingArrow.player.Name .. " 创建Portal Beam...")
+				local success = DrinkSelectionManager.createPortalArrowForPlayer(pendingArrow.player, pendingArrow.tableId)
+				if success then
+					_G.PendingPortalArrow = nil  -- 只有成功才清除待处理标记
+					print("[DrinkSelectionManager] ✓ Portal Beam创建成功")
+				else
+					print("[DrinkSelectionManager] ⚠️ Portal Beam创建失败，保留待处理标记以便后续重试")
+				end
+			else
+				print("[DrinkSelectionManager] ⚠️ 玩家已离线或角色不存在，无法创建Portal箭头")
+				-- 不清空PendingPortalArrow，留给备用方案重试
+			end
+		end
+	end)
 
 	-- 使用新的死亡效果管理器处理完整的死亡流程
 	if _G.DeathEffectManager and _G.DeathEffectManager.handlePlayerDeath then
@@ -1245,6 +1322,40 @@ function DrinkSelectionManager.executePlayerDeathFallback(player)
 
 		-- 重新生成角色（Roblox会自动在SpawnLocation复活）
 		player:LoadCharacter()
+
+		-- 🔧 V1.6新增：复活后创建Portal指引箭头（如果有待处理的Portal箭头）
+		-- 🔧 关键修复：需要等待新角色完全加载后再创建Beam
+		spawn(function()
+			-- 🔧 修复：使用waitForFreshCharacter真正等待新角色出现并确保HumanoidRootPart就绪
+			local newCharacter = waitForFreshCharacter(player, 10)
+			if not newCharacter then
+				print("[DrinkSelectionManager] ⚠️ 备用方案：等待新角色超时，无法创建Portal箭头")
+				-- 不清空PendingPortalArrow，让主路径有机会重试
+				return
+			end
+
+			-- 检查是否有待处理的Portal箭头
+			if _G.PendingPortalArrow and _G.PendingPortalArrow.player == player then
+				print("[DrinkSelectionManager] 🔍 备用方案：复活完成，开始创建Portal指引箭头...")
+				local pendingArrow = _G.PendingPortalArrow
+
+				if pendingArrow.player and pendingArrow.player.Parent and pendingArrow.player.Character then
+					print("[DrinkSelectionManager] ✓ 备用方案：正在为玩家 " .. pendingArrow.player.Name .. " 创建Portal Beam...")
+					local success = DrinkSelectionManager.createPortalArrowForPlayer(pendingArrow.player, pendingArrow.tableId)
+					if success then
+						_G.PendingPortalArrow = nil  -- 只有成功才清除待处理标记
+						print("[DrinkSelectionManager] ✓ 备用方案：Portal Beam创建成功")
+					else
+						print("[DrinkSelectionManager] ⚠️ 备用方案：Portal Beam创建失败，保留待处理标记")
+					end
+				else
+					print("[DrinkSelectionManager] ⚠️ 备用方案：玩家已离线或角色不存在，无法创建Portal箭头")
+					-- 不清空PendingPortalArrow
+				end
+			else
+				print("[DrinkSelectionManager] 🔍 备用方案：没有待处理的Portal箭头，或箭头已被清理")
+			end
+		end)
 	else
 		warn("玩家 " .. player.Name .. " 没有Humanoid")
 	end
@@ -1476,6 +1587,60 @@ function DrinkSelectionManager.switchToNextPlayer(tableId)
 	DrinkSelectionManager.startPlayerTurn(tableId)
 end
 
+-- 🔧 V1.6新增: 创建Portal指引箭头（用于教程模式游戏结束后）
+function DrinkSelectionManager.createPortalArrowForPlayer(realPlayer, tableId)
+	if not realPlayer or not realPlayer.Parent then
+		print("[DrinkSelectionManager] ⚠️ Portal箭头：玩家已离线或无效")
+		return false
+	end
+
+	local Workspace = game:GetService("Workspace")
+	local portal = Workspace:FindFirstChild("Portal")
+	if not portal then
+		warn("[DrinkSelectionManager] Portal箭头：找不到Portal模型")
+		return false
+	end
+
+	local basePart = portal:FindFirstChild("Base")
+	if not basePart then
+		warn("[DrinkSelectionManager] Portal箭头：Portal下的Base Part不存在")
+		return false
+	end
+
+	local portalAttachment = basePart:FindFirstChildOfClass("Attachment")
+	if not portalAttachment or not portalAttachment:IsA("Attachment") then
+		warn("[DrinkSelectionManager] Portal箭头：Portal.Base下的Attachment不存在")
+		return false
+	end
+
+	-- 🔧 调试：检查玩家和Portal的位置
+	local playerRootPart = realPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if playerRootPart then
+		local playerPos = playerRootPart.Position
+		local portalAttachPos = portalAttachment.WorldPosition
+		local distance = (playerPos - portalAttachPos).Magnitude
+		print("[DrinkSelectionManager] 🔍 玩家位置: " .. tostring(playerPos))
+		print("[DrinkSelectionManager] 🔍 Portal Attachment位置: " .. tostring(portalAttachPos))
+		print("[DrinkSelectionManager] 🔍 距离: " .. tostring(distance) .. " 单位")
+
+		-- 如果距离太远（超过500），说明玩家可能在SpawnLocation
+		if distance > 500 then
+			print("[DrinkSelectionManager] ⚠️ 警告：玩家和Portal距离过远（" .. distance .. "），可能在不同区域")
+		end
+	end
+
+	-- 激活Portal指引箭头
+	local TutorialGuideManager = _G.TutorialGuideManager or require(script.Parent.TutorialGuideManager)
+	if TutorialGuideManager then
+		print("[DrinkSelectionManager] ✓ 为玩家 " .. realPlayer.Name .. " 创建Portal指引箭头（Portal Beam）")
+		TutorialGuideManager:showPortalArrow(realPlayer, portalAttachment)
+		return true
+	else
+		warn("[DrinkSelectionManager] Portal箭头：TutorialGuideManager加载失败")
+		return false
+	end
+end
+
 -- 结束游戏
 function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 	-- 如果没有传tableId,尝试从loser获取
@@ -1528,6 +1693,80 @@ function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 		if TutorialEnvironmentManager then
 			TutorialEnvironmentManager:removeTutorialSeat()
 			print("[DrinkSelectionManager] ✓ 教程模式：游戏结束时已移除教程座位")
+
+			-- 🔧 V1.6新增：存储待处理的Portal箭头，根据胜负分开处理
+			-- 找到真实玩家（非NPC）- 通过检查是否在Players服务中
+			local realPlayer = nil
+			local Players = game:GetService("Players")
+
+			print("[DrinkSelectionManager] 🔍 检查player1...")
+			if selectionState.player1 and Players:FindFirstChild(selectionState.player1.Name) then
+				print("[DrinkSelectionManager] 🔍 player1是真实玩家!")
+				realPlayer = selectionState.player1
+			end
+
+			if not realPlayer then
+				print("[DrinkSelectionManager] 🔍 检查player2...")
+				if selectionState.player2 and Players:FindFirstChild(selectionState.player2.Name) then
+					print("[DrinkSelectionManager] 🔍 player2是真实玩家!")
+					realPlayer = selectionState.player2
+				end
+			end
+
+			if realPlayer then
+				print("[DrinkSelectionManager] 🔍 找到真实玩家: " .. realPlayer.Name)
+
+				-- 🔧 关键修复：根据胜负分开处理Beam创建时机
+				if reason == "poisoned" and loser then
+					-- 中毒者（loser）败北，另一个玩家（realPlayer）获胜
+					if realPlayer == loser then
+						-- 这是失败者，需要等待复活后再创建Beam
+						print("[DrinkSelectionManager] 🔍 玩家 " .. realPlayer.Name .. " 是失败者，将在复活后创建Portal指引箭头")
+
+						-- 存储待处理的Portal箭头信息，以供executePlayerDeathWithEffect之后的流程使用
+						_G.PendingPortalArrow = {
+							player = realPlayer,
+							tableId = tableId,
+							createTime = tick()
+						}
+						print("[DrinkSelectionManager] ✓ 已存储失败者Portal箭头待处理信息，将在复活后创建")
+					else
+						-- 这是获胜者，立即创建Beam
+						print("[DrinkSelectionManager] 🔍 玩家 " .. realPlayer.Name .. " 是获胜者，立即创建Portal指引箭头")
+						task.delay(0.5, function()
+							if realPlayer and realPlayer.Parent then
+								DrinkSelectionManager.createPortalArrowForPlayer(realPlayer, tableId)
+							else
+								print("[DrinkSelectionManager] ⚠️ realPlayer已离线或无效")
+							end
+						end)
+					end
+				elseif reason == "draw" then
+					-- 平局情况：存储待处理（通常平局时没有明确的realPlayer）
+					print("[DrinkSelectionManager] 🔍 游戏平局，存储Portal箭头待处理")
+					_G.PendingPortalArrow = {
+						player = realPlayer,
+						tableId = tableId,
+						createTime = tick()
+					}
+				else
+					-- 其他情况：备用方案，延迟创建
+					print("[DrinkSelectionManager] 🔍 游戏结束原因: " .. tostring(reason) .. "，存储Portal箭头待处理")
+					_G.PendingPortalArrow = {
+						player = realPlayer,
+						tableId = tableId,
+						createTime = tick()
+					}
+				end
+			else
+				warn("[DrinkSelectionManager] 找不到真实玩家，无法激活Portal指引")
+				if selectionState.player1 then
+					print("[DrinkSelectionManager] 🔍 player1: " .. selectionState.player1.Name .. " (在Players中? " .. tostring(Players:FindFirstChild(selectionState.player1.Name) ~= nil) .. ")")
+				end
+				if selectionState.player2 then
+					print("[DrinkSelectionManager] 🔍 player2: " .. selectionState.player2.Name .. " (在Players中? " .. tostring(Players:FindFirstChild(selectionState.player2.Name) ~= nil) .. ")")
+				end
+			end
 		end
 	end
 
@@ -2390,6 +2629,12 @@ function DrinkSelectionManager.endSelectionPhaseByPlayerLeave(winner, leavingPla
 		DrinkSelectionManager.hideSelectTips(winner)
 		DrinkSelectionManager.hideWaitingTips(winner)
 		DrinkSelectionManager.hidePropsUI(winner)
+	end
+
+	-- 🔧 V1.6新增：清理待处理的Portal箭头（如果玩家离开）
+	if _G.PendingPortalArrow and _G.PendingPortalArrow.player == leavingPlayer then
+		print("[DrinkSelectionManager] 玩家离开，清理待处理的Portal箭头")
+		_G.PendingPortalArrow = nil
 	end
 
 	-- 重置状态(传递tableId)
