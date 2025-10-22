@@ -64,7 +64,7 @@ local function waitForFreshCharacter(player, timeout)
 end
 
 -- 结果显示时长配置
-local RESULT_DISPLAY_DURATION = 0.5  -- Safe/Poison 文本显示时长（秒）
+local RESULT_DISPLAY_DURATION = 0.2  -- Safe/Poison 文本显示时长（秒）
 
 -- 等待RemoteEvents
 local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")

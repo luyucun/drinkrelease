@@ -145,8 +145,8 @@ local function setupNPCSeating()
 	-- 这样NPC会站在座位前方，高度与座位一致
 	local approachCFrame = seatCFrame * CFrame.new(0, 0, -1.5)
 
-	-- 直接使用计算出的CFrame，但调整方向让NPC面向座位
-	rootPart.CFrame = approachCFrame * CFrame.Angles(0, math.pi, 0)
+	-- 直接使用计算出的CFrame，让NPC面向座位（不旋转180度）
+	rootPart.CFrame = approachCFrame
 
 	-- 3. 等待物理引擎稳定
 	wait(0.3)
