@@ -600,4 +600,82 @@ end
 -- 导出到全局
 _G.EmoteDataManager = EmoteDataManager
 
+-- ============================================
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+-- ============================================
+
+function EmoteDataManager.resetPlayerData(userId, player)
+	-- 1. 检查参数有效性
+	if not userId or type(userId) ~= "number" then
+		warn("[EmoteDataManager] resetPlayerData: 无效的 userId: " .. tostring(userId))
+		return false
+	end
+
+	if not player or not player.UserId or player.UserId ~= userId then
+		warn("[EmoteDataManager] resetPlayerData: player 参数与 userId 不匹配")
+		return false
+	end
+
+	print("[EmoteDataManager] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
+
+	-- 2. 清空内存缓存（如果玩家在线）
+	if playerEmoteData[player] then
+		playerEmoteData[player] = nil
+		print("[EmoteDataManager] ✓ 已清空内存缓存")
+	end
+
+	-- 清空购买进行中标志
+	if purchaseInProgress[player] then
+		purchaseInProgress[player] = nil
+		print("[EmoteDataManager] ✓ 已清空购买标志")
+	end
+
+	-- 3. 重置 DataStore 为默认值（带重试机制）
+	local defaultData = {
+		ownedEmotes = copyEmoteList(DEFAULT_EMOTE_DATA.ownedEmotes),
+		equippedEmote = DEFAULT_EMOTE_DATA.equippedEmote,
+		version = DEFAULT_EMOTE_DATA.version
+	}
+
+	local maxRetries = 3
+	local resetSuccess = false
+
+	-- 仅在非Studio环境下操作DataStore
+	if not isStudio and EmoteDataStore then
+		for attempt = 1, maxRetries do
+			local success, err = pcall(function()
+				EmoteDataStore:SetAsync(getPlayerKey(player), defaultData)
+			end)
+
+			if success then
+				resetSuccess = true
+				print("[EmoteDataManager] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
+				break
+			else
+				warn("[EmoteDataManager] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
+				if attempt < maxRetries then
+					wait(1) -- 重试前等待1秒
+				end
+			end
+		end
+
+		if not resetSuccess then
+			warn("[EmoteDataManager] ❌ DataStore 重置最终失败，达到最大重试次数")
+			return false
+		end
+	else
+		resetSuccess = true
+		print("[EmoteDataManager] ✓ Studio环境或DataStore不可用，跳过DataStore重置")
+	end
+
+	-- 4. 如果玩家在线，重新初始化数据
+	if player and player.Parent then
+		EmoteDataManager.initializePlayerData(player)
+		print("[EmoteDataManager] ✓ 已重新初始化玩家数据")
+	end
+
+	print("[EmoteDataManager] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
+end
+
 return EmoteDataManager

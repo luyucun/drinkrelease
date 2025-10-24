@@ -613,4 +613,101 @@ function FreeGiftManager.initialize()
 	_G.FreeGiftManager = FreeGiftManager
 end
 
+-- ============================================
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+-- ============================================
+
+function FreeGiftManager.resetPlayerData(userId, player)
+	-- 1. 检查参数有效性
+	if not userId or type(userId) ~= "number" then
+		warn("[FreeGiftManager] resetPlayerData: 无效的 userId: " .. tostring(userId))
+		return false
+	end
+
+	if not player or not player.UserId or player.UserId ~= userId then
+		warn("[FreeGiftManager] resetPlayerData: player 参数与 userId 不匹配")
+		return false
+	end
+
+	print("[FreeGiftManager] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
+
+	-- 2. 清空内存缓存（如果玩家在线）
+	if FreeGiftManager.playerDataCache[player] then
+		-- 停止在线计时器
+		FreeGiftManager.stopOnlineTimer(player)
+		FreeGiftManager.playerDataCache[player] = nil
+		print("[FreeGiftManager] ✓ 已清空内存缓存和计时器")
+	end
+
+	-- 清空相关标志
+	if FreeGiftManager.dirtyPlayers[player] then
+		FreeGiftManager.dirtyPlayers[player] = nil
+		print("[FreeGiftManager] ✓ 已清空dirty标志")
+	end
+
+	if FreeGiftManager.onlineTimers[player] then
+		FreeGiftManager.onlineTimers[player] = nil
+		print("[FreeGiftManager] ✓ 已清空在线计时器标志")
+	end
+
+	-- 清空离线保存队列中的数据
+	local userIdStr = tostring(userId)
+	if FreeGiftManager.offlineSaveQueue[userIdStr] then
+		FreeGiftManager.offlineSaveQueue[userIdStr] = nil
+		print("[FreeGiftManager] ✓ 已清空离线保存队列")
+	end
+
+	-- 3. 重置 DataStore 为默认值（带重试机制）
+	local defaultData = {}
+	for key, value in pairs(DEFAULT_PLAYER_DATA) do
+		defaultData[key] = value
+	end
+	defaultData.lastSaveTime = tick()
+
+	local maxRetries = 3
+	local resetSuccess = false
+
+	-- 仅在非Studio环境下操作DataStore
+	if not isStudio and freeGiftDataStore then
+		for attempt = 1, maxRetries do
+			local success, err = pcall(function()
+				freeGiftDataStore:SetAsync("Player_" .. userIdStr, defaultData)
+			end)
+
+			if success then
+				resetSuccess = true
+				print("[FreeGiftManager] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
+				break
+			else
+				warn("[FreeGiftManager] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
+				if attempt < maxRetries then
+					wait(1) -- 重试前等待1秒
+				end
+			end
+		end
+
+		if not resetSuccess then
+			warn("[FreeGiftManager] ❌ DataStore 重置最终失败，达到最大重试次数")
+			return false
+		end
+	else
+		resetSuccess = true
+		print("[FreeGiftManager] ✓ Studio环境或DataStore不可用，跳过DataStore重置")
+	end
+
+	-- 4. 如果玩家在线，重新加载数据并启动计时器
+	if player and player.Parent then
+		local newData = FreeGiftManager.loadPlayerData(player)
+		if newData then
+			FreeGiftManager.startOnlineTimer(player)
+			print("[FreeGiftManager] ✓ 已重新加载玩家数据并启动计时器")
+		else
+			warn("[FreeGiftManager] ⚠️ 重新加载玩家数据失败")
+		end
+	end
+
+	print("[FreeGiftManager] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
+end
+
 return FreeGiftManager

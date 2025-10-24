@@ -65,35 +65,11 @@ local function initializeInviteButton()
 
 	-- 点击打开邀请界面
 	imageButtonInvite.MouseButton1Click:Connect(function()
-		print("[InviteMenuController] 点击了邀请按钮")
 		local inviteScreenGui = playerGui:FindFirstChild("Invite")
 		if inviteScreenGui then
 			inviteScreenGui.Enabled = not inviteScreenGui.Enabled
-			print("[InviteMenuController] 邀请界面已切换，当前状态: " .. tostring(inviteScreenGui.Enabled))
-			print("[InviteMenuController] Invite ScreenGui 属性:")
-			print("  - ZIndex: " .. tostring(inviteScreenGui.ZIndex))
-			print("  - ResetOnSpawn: " .. tostring(inviteScreenGui.ResetOnSpawn))
-
-			-- 检查 InvitBg 的大小和位置
-			local invitBg = inviteScreenGui:FindFirstChild("InvitBg")
-			if invitBg then
-				print("[InviteMenuController] InvitBg 属性:")
-				print("  - Size: " .. tostring(invitBg.Size))
-				print("  - Position: " .. tostring(invitBg.Position))
-				print("  - Visible: " .. tostring(invitBg.Visible))
-				print("  - BackgroundTransparency: " .. tostring(invitBg.BackgroundTransparency))
-			else
-				print("[InviteMenuController] ❌ 未找到InvitBg")
-			end
-		else
-			print("[InviteMenuController] ❌ 未找到Invite ScreenGui，PlayerGui中的内容:")
-			for _, child in pairs(playerGui:GetChildren()) do
-				print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
-			end
 		end
 	end)
-
-	print("[InviteMenuController] ✓ 邀请按钮初始化完成")
 end
 
 -- ============================================
@@ -125,21 +101,29 @@ local function initializeFriendAddDisplay()
 		addNum.TextColor3 = Color3.fromRGB(255, 200, 0)
 		addNum.TextScaled = true
 		addNum.Font = Enum.Font.GothamBold
-		addNum.Text = "×1.0"
+		addNum.Text = "+0%"
 		addNum.Parent = friendAdd
 	end
 
-	-- 监听邀请事件更新红点
+	-- V1.8: 监听邀请事件更新红点和好友加成
 	inviteEvent.OnClientEvent:Connect(function(action, data)
 		if action == "statusResponse" then
 			-- 更新红点显示
 			if redPoint then
 				redPoint.Visible = data.hasUnclaimedRewards or false
 			end
+
+			-- V1.8: 新增：更新好友加成显示（按策划稿显示百分比）
+			if data.friendCount and data.friendCount > 0 then
+				InviteMenuController.updateFriendBonus(data.friendCount * 0.2)
+			else
+				InviteMenuController.updateFriendBonus(0)
+			end
 		end
 	end)
 
-	print("[InviteMenuController] ✓ 好友加成显示初始化完成")
+	-- V1.8: 新增：初始化时请求一次邀请状态，获取好友加成
+	inviteEvent:FireServer("requestStatus", {})
 end
 
 -- ============================================
@@ -148,8 +132,9 @@ end
 
 function InviteMenuController.updateFriendBonus(bonus)
 	if addNum then
-		local multiplier = 1 + bonus
-		addNum.Text = string.format("×%.1f", multiplier)
+		-- V1.8: 按策划稿显示百分比格式（例如 +0%, +20%, +40% 等）
+		local percentageBonus = math.floor(bonus * 100)
+		addNum.Text = string.format("+%d%%", percentageBonus)
 	end
 end
 
@@ -175,8 +160,6 @@ local function initialize()
 	-- 初始化各个组件
 	initializeInviteButton()
 	initializeFriendAddDisplay()
-
-	print("[InviteMenuController] ✓ 初始化完成")
 end
 
 initialize()

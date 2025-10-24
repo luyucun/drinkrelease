@@ -57,6 +57,8 @@ _G.TutorialMode = true
 _G.TutorialCompleted = {}  -- 记录完成的玩家
 _G.TutorialEnvironmentManager = TutorialEnvironmentManager  -- 🔧 V1.6: 导出到全局，供其他模块使用
 _G.PortalTransportManager = PortalTransportManager  -- 🔧 V1.6: 导出Portal管理器到全局
+_G.TutorialGuideManager = TutorialGuideManager  -- 🔧 V2.1: 导出TutorialGuideManager到全局
+_G.PlayerDataService = PlayerDataService  -- 🔧 V2.6: 导出PlayerDataService到全局，供DrinkSelectionManager使用
 
 -- ============================================
 -- 场景初始化配置
@@ -202,7 +204,9 @@ setupNPCSeating()
 local function onPlayerAdded(player)
 
 	-- 埋点1：玩家进入Newplayer
-	TutorialAnalyticsService:trackPlayerEnterNewplayer(player)
+	if TutorialAnalyticsService then
+		TutorialAnalyticsService:trackPlayerEnterNewplayer(player)
+	end
 
 	-- 等待玩家角色加载
 	local character = player.Character or player.CharacterAdded:Wait()
@@ -215,17 +219,23 @@ local function onPlayerAdded(player)
 	end
 
 	-- 创建引导箭头
-	TutorialGuideManager:showGuidingArrow(player, chair2:FindFirstChild("Seat"))
+	if TutorialGuideManager then
+		TutorialGuideManager:showGuidingArrow(player, chair2:FindFirstChild("Seat"))
+	end
 end
 
 -- 玩家离开处理
 local function onPlayerRemoving(player)
 
 	-- 清理引导箭头
-	TutorialGuideManager:cleanupOnPlayerLeaving(player)
+	if TutorialGuideManager then
+		TutorialGuideManager:cleanupOnPlayerLeaving(player)
+	end
 
 	-- 清理埋点缓存
-	TutorialAnalyticsService:cleanupPlayerTrack(player)
+	if TutorialAnalyticsService then
+		TutorialAnalyticsService:cleanupPlayerTrack(player)
+	end
 
 	-- 🔧 CRITICAL FIX: 清理内存中的教程完成标记，防止内存泄漏
 	if _G.TutorialCompleted and _G.TutorialCompleted[player.UserId] then
@@ -310,10 +320,14 @@ local function setupSeatMonitoring()
 				if player then
 	
 					-- 埋点2：玩家坐下
-					TutorialAnalyticsService:trackPlayerSitDown(player)
+					if TutorialAnalyticsService then
+						TutorialAnalyticsService:trackPlayerSitDown(player)
+					end
 
 					-- 销毁引导箭头
-					TutorialGuideManager:hideGuidingArrow(player)
+					if TutorialGuideManager then
+						TutorialGuideManager:hideGuidingArrow(player)
+					end
 
 					end
 			end
@@ -329,6 +343,11 @@ setupSeatMonitoring()
 
 local function setupPortalInteraction()
 	-- 等待Portal初始化
+	if not PortalTransportManager then
+		warn("[NewPlayerEntry] PortalTransportManager未加载，Portal初始化失败")
+		return
+	end
+
 	while not PortalTransportManager:getPortalStatus().initialized do
 		wait(0.1)
 	end
@@ -346,55 +365,51 @@ local function setupPortalInteraction()
 	-- 辅助函数：处理Portal交互的公共逻辑
 	local function handlePortalInteraction(player)
 
-		-- 🔧 V1.6: 检查游戏是否已经完成
-		local gameInstance = _G.TableManager and _G.TableManager.getTableInstance(botTableId) or nil
-		local gameCompleted = false
-		local gameResult = "unknown"
+		-- 🔧 V2.6 CRITICAL FIX: 完全移除对gameCompletedThisRound的依赖
+		-- 不再使用timing-sensitive的flags，而是信任DrinkSelectionManager已写入_G.TutorialCompleted
+		-- 当玩家进入游戏并完成时，DrinkSelectionManager.endGame()会直接写入_G.TutorialCompleted[player.UserId]
 
-		if gameInstance and gameInstance.gameState then
-			-- 检查游戏是否已达到结果阶段
-			if gameInstance.gameState.gamePhase == "result" then
-				gameCompleted = true
-				gameResult = "completed"
-			elseif gameInstance.gameState.gamePhase == "waiting" then
-				-- 游戏还没开始，允许传送但不标记完成
-				gameResult = "not_started"
-			else
-				-- 游戏尚未完成，提示玩家等待
-					gameResult = "incomplete"
+		-- 检查玩家是否已在内存中被标记为完成
+		local alreadyCompleted = _G.TutorialCompleted and _G.TutorialCompleted[player.UserId]
+
+		if not alreadyCompleted then
+			-- 玩家未被标记为完成教程，拒绝传送
+			if TutorialAnalyticsService then
+				TutorialAnalyticsService:trackPortalInteraction(player, "incomplete")
 			end
-		else
-			-- 无法获取游戏状态，可能是GameInstance尚未初始化
-				gameResult = "unknown"
+
+			if TutorialGuideManager then
+				TutorialGuideManager:showMessage(player, "请先完成教程对局再离开！")
+			end
+
+			print("[NewPlayerEntry] ⚠️ 玩家 " .. player.Name .. " 尝试提前通过Portal，已拒绝")
+			return
 		end
 
-		-- 🔧 CRITICAL FIX: 统一内存和持久化状态逻辑
-		-- 只有游戏真正完成时才标记为已完成教程
-		if gameCompleted then
-			-- 标记为已完成教程（内存和持久化都设置）
-			_G.TutorialCompleted[player.UserId] = true
-			PlayerDataService:setTutorialCompleted(player, true)
+		-- ✅ 玩家已被标记为完成教程，允许传送
+		print("[NewPlayerEntry] ✓ 玩家 " .. player.Name .. " 已完成教程，执行传送")
 
-			-- 🔧 V1.6: 移除教程座位，强制玩家前往下一个场景
-			if TutorialEnvironmentManager then
-				TutorialEnvironmentManager:removeTutorialSeat()
-			end
-		else
-			-- 不设置任何完成标记，保持newPlayerCompleted = false
+		-- 🔧 V1.6: 移除教程座位
+		if TutorialEnvironmentManager then
+			TutorialEnvironmentManager:removeTutorialSeat()
 		end
 
-		-- 埋点3：Portal交互
-		TutorialAnalyticsService:trackPortalInteraction(player, gameResult)
+		-- 埋点：Portal交互
+		if TutorialAnalyticsService then
+			TutorialAnalyticsService:trackPortalInteraction(player, "portal_used")
+		end
 
-		-- 🔧 V1.6新增：清理Portal指引箭头（在传送前）
+		-- 清理Portal指引箭头
 		if TutorialGuideManager then
 			TutorialGuideManager:hidePortalArrow(player)
-			end
+		end
 
 		-- 触发传送
 		task.delay(1, function()
 			if player and player.Parent then
-				PortalTransportManager:teleportToMainPlace(player)
+				if PortalTransportManager then
+					PortalTransportManager:teleportToMainPlace(player)
+				end
 			end
 		end)
 	end

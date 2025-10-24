@@ -174,12 +174,6 @@ local function setupDebugCommands()
 			end
 		end
 	}
-
-	print("[InviteDebugCommands] ✓ 调试命令已注册")
-	print("使用方法: _G.InviteDebug.simulateInvite('PlayerA', 'PlayerB')")
-	print("          _G.InviteDebug.showStatus('PlayerName')")
-	print("          _G.InviteDebug.generateLink('PlayerName')")
-	print("          _G.InviteDebug.listAll()")
 end
 
 -- 初始化

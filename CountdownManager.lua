@@ -11,8 +11,8 @@ local RunService = game:GetService("RunService")
 
 -- 倒计时配置
 local COUNTDOWN_CONFIG = {
-    POISON_PHASE_DURATION = 15,     -- 阶段3：毒药注入 15秒
-    SELECTION_PHASE_DURATION = 15,  -- 阶段4：奶茶选择 15秒
+    POISON_PHASE_DURATION = 18,     -- 阶段3：毒药注入 18秒（V1.8修改：15→18）
+    SELECTION_PHASE_DURATION = 10,  -- 阶段4：奶茶选择 10秒（V1.8修改：15→10）
     WARNING_TIME = 5,               -- 最后5秒红色警告
     UPDATE_INTERVAL = 0.1,          -- 100ms更新频率
     COUNTDOWN_PRECISION = 0.01      -- 倒计时精度（10ms）

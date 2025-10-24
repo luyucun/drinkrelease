@@ -161,14 +161,6 @@ function FriendsService:updateRoomFriends(tableId, players)
 
 	-- 存储到房间缓存
 	roomFriendsCache[tableId] = roomFriendMap
-
-	-- 输出调试信息
-	for userId, info in pairs(roomFriendMap) do
-		local player = Players:GetPlayerByUserId(userId)
-		if player then
-			print("[FriendsService] 玩家 " .. player.Name .. " 房间好友数: " .. info.friendCount .. ", 加成: " .. (info.bonus * 100) .. "%")
-		end
-	end
 end
 
 -- ============================================
@@ -240,7 +232,7 @@ function FriendsService.initialize()
 		FriendsService:clearPlayerCache(player)
 	end)
 
-	print("[FriendsService] ✓ 初始化完成")
+	print("[FriendsService] 初始化完成")
 end
 
 -- 全局导出

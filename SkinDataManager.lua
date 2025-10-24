@@ -559,6 +559,89 @@ end)
 -- 注册为全局管理器
 _G.SkinDataManager = SkinDataManager
 
+-- ============================================
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+-- ============================================
+
+function SkinDataManager.resetPlayerData(userId, player)
+	-- 1. 检查参数有效性
+	if not userId or type(userId) ~= "number" then
+		warn("[SkinDataManager] resetPlayerData: 无效的 userId: " .. tostring(userId))
+		return false
+	end
+
+	if not player or not player.UserId or player.UserId ~= userId then
+		warn("[SkinDataManager] resetPlayerData: player 参数与 userId 不匹配")
+		return false
+	end
+
+	print("[SkinDataManager] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
+
+	-- 2. 清空内存缓存（如果玩家在线）
+	if playerSkinData[player] then
+		playerSkinData[player] = nil
+		print("[SkinDataManager] ✓ 已清空内存缓存")
+	end
+
+	-- 清空购买锁和冷却
+	if purchaseLocks[userId] then
+		purchaseLocks[userId] = nil
+		print("[SkinDataManager] ✓ 已清空购买锁")
+	end
+
+	if purchaseCooldowns[userId] then
+		purchaseCooldowns[userId] = nil
+		print("[SkinDataManager] ✓ 已清空购买冷却")
+	end
+
+	-- 3. 重置 DataStore 为默认值（带重试机制）
+	local defaultData = {}
+	for key, value in pairs(DEFAULT_SKIN_DATA) do
+		if type(value) == "table" then
+			defaultData[key] = {}
+			for k, v in pairs(value) do
+				defaultData[key][k] = v
+			end
+		else
+			defaultData[key] = value
+		end
+	end
+
+	local maxRetries = 3
+	local resetSuccess = false
+
+	for attempt = 1, maxRetries do
+		local success, err = pcall(function()
+			SkinDataStore:SetAsync("Player_" .. userId, defaultData)
+		end)
+
+		if success then
+			resetSuccess = true
+			print("[SkinDataManager] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
+			break
+		else
+			warn("[SkinDataManager] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
+			if attempt < maxRetries then
+				wait(1) -- 重试前等待1秒
+			end
+		end
+	end
+
+	if not resetSuccess then
+		warn("[SkinDataManager] ❌ DataStore 重置最终失败，达到最大重试次数")
+		return false
+	end
+
+	-- 4. 如果玩家在线，重新初始化数据
+	if player and player.Parent then
+		SkinDataManager.initializePlayerData(player)
+		print("[SkinDataManager] ✓ 已重新初始化玩家数据")
+	end
+
+	print("[SkinDataManager] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
+end
+
 -- 自动初始化
 SkinDataManager.initialize()
 

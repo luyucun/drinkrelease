@@ -253,7 +253,10 @@ end
 
 -- 增加玩家金币
 function CoinManager.addCoins(player, amount, reason)
-	if not player or not amount or amount <= 0 then return false end
+	if not player or type(amount) ~= "number" or amount <= 0 then
+		warn("[CoinManager] 无效参数: player=" .. tostring(player) .. ", amount=" .. tostring(amount))
+		return false
+	end
 
 	-- 🔧 关键修复：获取操作锁，防止并发修改
 	if not acquirePlayerLock(player) then
@@ -498,6 +501,54 @@ function CoinManager.debugPrintAllCoins()
 		if player and player.Parent then
 		end
 	end
+end
+
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+function CoinManager.resetPlayerData(userId, player)
+	if not userId then return false end
+
+	-- 清空内存缓存
+	if player then
+		playerCoins[player] = nil
+	end
+
+	-- 清空操作锁
+	local userIdStr = tostring(userId)
+	playerOperationLocks[userIdStr] = nil
+
+	-- 重置DataStore为默认值
+	if not coinDataStore then
+		return true  -- Studio环境，直接返回
+	end
+
+	local success = false
+	local maxRetries = 3
+
+	for attempt = 1, maxRetries do
+		local saveSuccess = pcall(function()
+			coinDataStore:SetAsync(userIdStr, CONFIG.DEFAULT_COINS)
+		end)
+
+		if saveSuccess then
+			success = true
+			break
+		else
+			task.wait(1)
+		end
+	end
+
+	if not success then
+		warn("[CoinManager] 重置玩家 " .. userIdStr .. " 的金币数据失败")
+		return false
+	end
+
+	-- 如果玩家在线，刷新UI
+	if player and player.Parent then
+		playerCoins[player] = CONFIG.DEFAULT_COINS
+		CoinManager.updatePlayerCoinUI(player)
+	end
+
+	return true
 end
 
 -- 初始化金币管理器

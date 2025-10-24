@@ -32,8 +32,8 @@ WheelConfig.DEVELOPER_PRODUCTS = {
 
 -- 系统配置
 WheelConfig.SETTINGS = {
-	FREE_SPIN_INTERVAL = 300,             -- 免费次数间隔(5分钟 = 300秒)
-	FIRST_FREE_SPIN_INTERVAL = 180,       -- 🎁 新玩家首次免费次数间隔(3分钟 = 180秒)
+	FREE_SPIN_INTERVAL = 600,             -- 免费次数间隔(10分钟 = 600秒)
+	FIRST_FREE_SPIN_INTERVAL = 300,       -- 🎁 新玩家首次免费次数间隔(5分钟 = 300秒)
 	SPIN_ANIMATION_DURATION = 3,          -- 转盘动画时长(秒)
 	FULL_ROTATIONS = 5,                   -- 转盘完整旋转圈数
 	TICK_SOUND_ID = 9120658649,           -- 音效资源ID

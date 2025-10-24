@@ -41,38 +41,31 @@ local function getInviteUI()
 	-- 等待Invite GUI从StarterGui复制到PlayerGui
 	local inviteGui = playerGui:WaitForChild("Invite", 10)
 	if not inviteGui then
-		warn("❌ [InvitationUI] 未找到Invite GUI，PlayerGui中的内容:")
-		for _, child in pairs(playerGui:GetChildren()) do
-			warn("  - " .. child.Name .. " (" .. child.ClassName .. ")")
-		end
+		warn("[InvitationUI] 未找到Invite GUI")
 		return false
 	end
 
-	print("[InvitationUI] ✓ 找到Invite GUI")
 	inviteScreenGui = inviteGui
 	inviteBg = inviteScreenGui:WaitForChild("InvitBg", 5)
 	if not inviteBg then
-		warn("❌ [InvitationUI] 未找到Invite GUI中的InvitBg Frame")
+		warn("[InvitationUI] 未找到InvitBg Frame")
 		return false
 	end
 
-	print("[InvitationUI] ✓ 找到InvitBg")
 	closeButton = inviteBg:WaitForChild("CloseButton", 5)
 	inviteButton = inviteBg:WaitForChild("InviteButton", 5)
 	countdownTime = inviteBg:WaitForChild("CountDownTime", 5)
 	scrollingFrame = inviteBg:WaitForChild("ScrollingFrame", 5)
 
 	if not scrollingFrame then
-		warn("❌ [InvitationUI] 未找到InvitBg中的ScrollingFrame")
+		warn("[InvitationUI] 未找到ScrollingFrame")
 		return false
 	end
 
-	print("[InvitationUI] ✓ 找到ScrollingFrame")
 	rewardTemplate1 = scrollingFrame:WaitForChild("InviteReward1", 5)
 	rewardTemplate3 = scrollingFrame:WaitForChild("InviteReward3", 5)
 	rewardTemplate5 = scrollingFrame:WaitForChild("InviteReward5", 5)
 
-	print("[InvitationUI] ✓ 所有UI元素加载完成")
 	return true
 end
 
@@ -245,18 +238,8 @@ end
 -- ============================================
 
 function InvitationUI.showNotification(message)
-	-- 查找通知系统
-	local notification = playerGui:FindFirstChild("ShowNotification")
-	if notification then
-		-- 调用现有的通知系统
-		local notificationEvent = remoteEventsFolder:FindFirstChild("ShowNotification")
-		if notificationEvent then
-			notificationEvent:FireServer(message)
-		end
-	else
-		-- 简单的控制台输出
-		print("[Notification] " .. message)
-	end
+	-- 简单的控制台输出
+	print("[Notification] " .. message)
 end
 
 -- ============================================
@@ -280,20 +263,16 @@ end
 local function setupInviteButton()
 	if inviteButton then
 		inviteButton.MouseButton1Click:Connect(function()
-			-- 尝试调用 Roblox 系统邀请功能
-			local success = pcall(function()
-				local guiService = game:GetService("GuiService")
-				-- 尝试打开系统邀请对话框
-				guiService:OpenInvitePrompt()
-				print("[InvitationUI] ✓ 已打开系统邀请页面")
+			-- 🔧 V2.6 修复：使用官方推荐的 SocialService:PromptGameInvite()
+			-- 替换已过时的 GuiService:OpenInvitePrompt()（仅在主机端可用）
+			-- 新 API 支持 PC、手机、主机等所有平台
+			local socialService = game:GetService("SocialService")
+			local success, err = pcall(function()
+				socialService:PromptGameInvite(player)
 			end)
-
-			-- 如果系统邀请失败，显示邀请链接供手动分享
 			if not success then
-				pcall(function()
-					inviteEvent:FireServer("generateLink", {})
-					print("[InvitationUI] 系统邀请不可用，已生成邀请链接")
-				end)
+				warn("[InvitationUI] 打开邀请弹窗失败:", err)
+				InvitationUI.showNotification("邀请功能暂时不可用")
 			end
 		end)
 	end
@@ -338,8 +317,6 @@ local function initialize()
 			end
 		end)
 	end
-
-	print("[InvitationUI] ✓ 初始化完成")
 end
 
 initialize()

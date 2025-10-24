@@ -11,11 +11,3 @@ local FreeGiftAnalytics = require(ServerScriptService:WaitForChild("FreeGiftAnal
 
 -- 初始化
 FreeGiftAnalytics.initialize()
-
--- 定期打印统计报告（可选，用于调试）
-spawn(function()
-	while true do
-		wait(300)  -- 每5分钟打印一次
-		FreeGiftAnalytics.printReport()
-	end
-end)

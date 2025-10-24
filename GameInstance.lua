@@ -95,6 +95,9 @@ function GameInstance.new(tableId, tableFolder)
 		poisonSelections = {}
 	}
 
+	-- 🔧 V2.1 新增：教程完成标记（不会被resetToWaiting重置）
+	self.gameCompletedThisRound = false
+
 	-- 初始化
 	self:initialize()
 
@@ -346,6 +349,13 @@ function GameInstance:onPlayerSat(seat, player)
 		self.gameState.player1 = player
 		self.gameState.playersReady = self.gameState.playersReady + 1
 
+		-- 🔧 V2.5: 教程场景清空上一局的完成标记
+		-- 当第一个真实玩家入座（playersReady从0变为1）时，清空标记为下一局准备
+		if self.isTutorial and self.gameState.playersReady == 1 and not isNPC then
+			self.gameCompletedThisRound = false
+			print("[GameInstance] ✓ 新教程开始，清空上一局的完成标记")
+		end
+
 		-- 立即启用Leave按钮（只有真实玩家才需要）
 		if not isNPC then
 			self:enableLeaveButton(player)
@@ -368,6 +378,13 @@ function GameInstance:onPlayerSat(seat, player)
 	elseif seat == self.seat2 and not self.gameState.player2 then
 		self.gameState.player2 = player
 		self.gameState.playersReady = self.gameState.playersReady + 1
+
+		-- 🔧 V2.6: 教程场景清空上一局的完成标记
+		-- 如果seat1还没有真实玩家入座，在seat2入座时也要重置（以防万一）
+		if self.isTutorial and self.gameState.playersReady == 1 and not isNPC then
+			self.gameCompletedThisRound = false
+			print("[GameInstance] ✓ 新教程开始（通过seat2），清空上一局的完成标记")
+		end
 
 		-- 立即启用Leave按钮（只有真实玩家才需要）
 		if not isNPC then
@@ -1067,6 +1084,9 @@ function GameInstance:handlePlayerLeaveWin(leavingPlayer)
 
 		self.gameState.gamePhase = "result"
 
+		-- 🔧 V2.1: 标记游戏已完成（教程使用，不会被resetToWaiting重置）
+		self.gameCompletedThisRound = true
+
 		-- 立即重置游戏，无需等待（玩家离开情况下）
 		-- refreshSeatState会自动为仍在座位上的获胜玩家设置准备状态
 		self:resetToWaiting()
@@ -1083,6 +1103,8 @@ function GameInstance:handlePlayerLeaveWin(leavingPlayer)
 
 		self.gameState.gamePhase = "result"
 		-- 立即重置，不需要等待
+		-- 🔧 V2.1: 标记游戏已完成
+		self.gameCompletedThisRound = true
 		self:resetToWaiting()
 	end
 end
@@ -1094,6 +1116,10 @@ function GameInstance:resetToWaiting()
 	self.gameState.isCountingDown = false
 	self.gameState.poisonSelections = {}
 
+	-- ⚠️ 注意：不再在这里清空 gameCompletedThisRound
+	-- gameCompletedThisRound 会一直保持到下一个真实玩家入座
+	-- 这样对局结束后的玩家才能正常通过Portal
+
 	-- 禁用AirWall，恢复自由通行
 	self:disableAirWalls()
 
@@ -1102,16 +1128,44 @@ function GameInstance:resetToWaiting()
 		_G.FriendsService:clearRoomCache(self.tableId)
 	end
 
+	-- V1.8: 新增：重置后广播好友加成信息到客户端
+	-- 这确保UI能及时更新最新的加成数据
+	if _G.InviteManager and self.gameState.player1 and self.gameState.player1:IsA("Player") then
+		local status = _G.InviteManager:getInviteStatus(self.gameState.player1)
+		if status then
+			local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
+			local inviteEvent = remoteEventsFolder:FindFirstChild("InviteEvent")
+			if inviteEvent then
+				pcall(function()
+					inviteEvent:FireClient(self.gameState.player1, "statusResponse", status)
+				end)
+			end
+		end
+	end
+
+	if _G.InviteManager and self.gameState.player2 and self.gameState.player2:IsA("Player") then
+		local status = _G.InviteManager:getInviteStatus(self.gameState.player2)
+		if status then
+			local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
+			local inviteEvent = remoteEventsFolder:FindFirstChild("InviteEvent")
+			if inviteEvent then
+				pcall(function()
+					inviteEvent:FireClient(self.gameState.player2, "statusResponse", status)
+				end)
+			end
+		end
+	end
+
 	-- 为仍在座位上的玩家显示Menu界面（退出对局状态）
 	-- 使用特定菜单配置：只显示shop按钮
 	-- Skin和Emote按钮始终显示，不受游戏状态影响
-	if self.gameState.player1 then
+	if self.gameState.player1 and self.gameState.player1:IsA("Player") and self.gameState.player1.Parent then
 		self:setSpecificMenuVisibility(self.gameState.player1, {
 			shop = true,
 			death = false
 		})
 	end
-	if self.gameState.player2 then
+	if self.gameState.player2 and self.gameState.player2:IsA("Player") and self.gameState.player2.Parent then
 		self:setSpecificMenuVisibility(self.gameState.player2, {
 			shop = true,
 			death = false

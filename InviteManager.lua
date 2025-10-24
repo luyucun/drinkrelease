@@ -59,14 +59,14 @@ local REWARD_CONFIG = {
 		requiredCount = 3,
 		rewards = {
 			coins = 200,
-			wheelSpins = 1
+			wheelSpins = 2
 		}
 	},
 	reward_5 = {
 		requiredCount = 5,
 		rewards = {
 			coins = 200,
-			wheelSpins = 2,
+			wheelSpins = 3,
 			poisonClear = 1
 		}
 	}
@@ -213,7 +213,6 @@ function InviteManager:loadPlayerInviteData(player)
 		playerInviteData[userId] = result
 	end
 
-	print("[InviteManager] ✓ 已加载玩家邀请数据: " .. player.Name)
 	return playerInviteData[userId]
 end
 
@@ -236,7 +235,6 @@ function InviteManager:savePlayerInviteData(player, data)
 			end)
 
 			if success then
-				print("[InviteManager] ✓ 已保存玩家邀请数据: " .. player.Name)
 				return
 			else
 				task.wait(1)
@@ -282,8 +280,6 @@ function InviteManager:resetDailyInviteData(player)
 	playerData.lastResetTime = getCurrentUTC0Timestamp()
 
 	self:savePlayerInviteData(player, playerData)
-
-	print("[InviteManager] ✓ 已为玩家重置每日邀请数据: " .. player.Name)
 end
 
 -- ============================================
@@ -393,8 +389,6 @@ function InviteManager:recordInvitedPlayer(inviterId, invitedId)
 
 	queueSaveOperation(inviter, playerData)
 
-	print("[InviteManager] ✓ 邀请成功: " .. inviter.Name .. " 邀请了 " .. invitedId)
-
 	return true
 end
 
@@ -458,14 +452,14 @@ function InviteManager:claimReward(player, rewardId)
 	-- 发放金币
 	if rewards.coins and rewards.coins > 0 then
 		if _G.CoinManager then
-			_G.CoinManager:addCoins(player, rewards.coins, "邀请奖励")
+			_G.CoinManager.addCoins(player, rewards.coins, "邀请奖励")
 		end
 	end
 
 	-- 发放转盘次数
 	if rewards.wheelSpins and rewards.wheelSpins > 0 then
 		if _G.WheelDataManager then
-			_G.WheelDataManager:addSpinsFromInviteReward(player, rewards.wheelSpins)
+			_G.WheelDataManager.addSpinsFromInviteReward(player, rewards.wheelSpins)
 		end
 	end
 
@@ -493,8 +487,6 @@ function InviteManager:claimReward(player, rewardId)
 		})
 	end
 
-	print("[InviteManager] ✓ 玩家 " .. player.Name .. " 领取了奖励: " .. rewardId)
-
 	return true, "Success"
 end
 
@@ -507,11 +499,22 @@ function InviteManager:getInviteStatus(player)
 
 	local playerData = self:loadPlayerInviteData(player)
 
+	-- V1.8: 增加好友加成信息
+	local friendCount = 0
+	local friendBonus = 0
+	if _G.FriendsService then
+		-- 注意：这里获取的是全局好友数，不限于房间
+		-- 房间特定的加成在游戏中由 CoinManager.giveCoinsReward 应用
+		friendCount = #(_G.FriendsService:getFriendsListCached(player))
+	end
+
 	return {
 		invitedCount = playerData.invitedCount,
 		dailyInvitedCount = playerData.dailyInvitedCount,
 		claimedRewards = playerData.claimedRewards,
-		hasUnclaimedRewards = self:hasUnclaimedRewards(player)
+		hasUnclaimedRewards = self:hasUnclaimedRewards(player),
+		friendCount = friendCount,      -- 新增：好友总数
+		friendBonus = friendBonus       -- 新增：好友加成倍数（0.x 格式）
 	}
 end
 
@@ -592,7 +595,7 @@ function InviteManager.initialize()
 		end
 	end)
 
-	print("[InviteManager] ✓ 初始化完成")
+	print("[InviteManager] 初始化完成")
 end
 
 -- ============================================
@@ -614,7 +617,6 @@ function InviteManager:checkPlayerJoinWithInvite(player)
 	end
 
 	if inviteCode then
-		print("[InviteManager] 玩家 " .. player.Name .. " 通过邀请链接进入，邀请码: " .. inviteCode)
 		InviteManager:processInviteCode(player, inviteCode)
 	end
 end
@@ -640,11 +642,95 @@ function InviteManager:processInviteCode(player, code)
 			-- 邀请者不在线，仍然记录邀请（异步）
 			self:recordInvitedPlayer(inviterId, player.UserId)
 		end
-
-		print("[InviteManager] ✓ 邀请链接有效，已记录邀请: " .. (inviter and inviter.Name or "玩家#" .. inviterId))
-	else
-		warn("[InviteManager] 邀请链接无效或已过期: " .. code)
 	end
+end
+
+-- ============================================
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+-- ============================================
+
+function InviteManager:resetPlayerData(userId, player)
+	-- 1. 检查参数有效性
+	if not userId or type(userId) ~= "number" then
+		warn("[InviteManager] resetPlayerData: 无效的 userId: " .. tostring(userId))
+		return false
+	end
+
+	if not player or not player.UserId or player.UserId ~= userId then
+		warn("[InviteManager] resetPlayerData: player 参数与 userId 不匹配")
+		return false
+	end
+
+	print("[InviteManager] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
+
+	-- 2. 清空内存缓存（如果玩家在线）
+	if playerInviteData[userId] then
+		playerInviteData[userId] = nil
+		print("[InviteManager] ✓ 已清空内存缓存")
+	end
+
+	-- 清空操作锁
+	if playerOperationLocks[tostring(userId)] then
+		playerOperationLocks[tostring(userId)] = nil
+		print("[InviteManager] ✓ 已清空操作锁")
+	end
+
+	-- 3. 重置 DataStore 为默认值（带重试机制）
+	local defaultData = {}
+	for k, v in pairs(DEFAULT_INVITE_DATA) do
+		if type(v) == "table" then
+			defaultData[k] = {}
+			for k2, v2 in pairs(v) do
+				defaultData[k][k2] = v2
+			end
+		else
+			defaultData[k] = v
+		end
+	end
+
+	local maxRetries = 3
+	local resetSuccess = false
+
+	-- 仅在非Studio环境下操作DataStore
+	if not isStudio and inviteDataStore then
+		for attempt = 1, maxRetries do
+			local success, err = pcall(function()
+				inviteDataStore:SetAsync(tostring(userId), defaultData)
+			end)
+
+			if success then
+				resetSuccess = true
+				print("[InviteManager] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
+				break
+			else
+				warn("[InviteManager] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
+				if attempt < maxRetries then
+					wait(1) -- 重试前等待1秒
+				end
+			end
+		end
+
+		if not resetSuccess then
+			warn("[InviteManager] ❌ DataStore 重置最终失败，达到最大重试次数")
+			return false
+		end
+	else
+		resetSuccess = true
+		print("[InviteManager] ✓ Studio环境或DataStore不可用，跳过DataStore重置")
+	end
+
+	-- 4. 如果玩家在线，重新加载数据
+	if player and player.Parent then
+		local newData = self:loadPlayerInviteData(player)
+		if newData then
+			print("[InviteManager] ✓ 已重新加载玩家数据")
+		else
+			warn("[InviteManager] ⚠️ 重新加载玩家数据失败")
+		end
+	end
+
+	print("[InviteManager] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
 end
 
 -- 全局导出

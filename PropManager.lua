@@ -498,6 +498,62 @@ function PropManager.resetNewPlayerGiftForTesting(player)
 	return true
 end
 
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+function PropManager.resetPlayerData(userId, player)
+	if not userId then return false end
+
+	-- 创建默认数据的深拷贝
+	local defaultDataCopy = {
+		props = {},
+		hasReceivedNewPlayerGift = false,
+		version = 2
+	}
+
+	-- 复制默认道具数量
+	for propId, quantity in pairs(DEFAULT_PROP_DATA.props) do
+		defaultDataCopy.props[propId] = quantity
+	end
+
+	-- 清空内存缓存
+	if player then
+		playerPropData[player] = nil
+	end
+
+	-- 重置DataStore为默认值
+	if not PropDataStore then
+		return true  -- Studio环境，直接返回
+	end
+
+	local success = false
+	local maxRetries = 3
+	local userIdStr = tostring(userId)
+
+	for attempt = 1, maxRetries do
+		local saveSuccess = pcall(function()
+			PropDataStore:SetAsync("Player_" .. userIdStr, defaultDataCopy)
+		end)
+
+		if saveSuccess then
+			success = true
+			break
+		else
+			task.wait(1)
+		end
+	end
+
+	if not success then
+		warn("[PropManager] 重置玩家 " .. userIdStr .. " 的道具数据失败")
+		return false
+	end
+
+	-- 如果玩家在线，重新初始化数据
+	if player and player.Parent then
+		PropManager.initializePlayerData(player)
+	end
+
+	return true
+end
+
 -- 导出到全局供其他脚本使用
 _G.PropManager = PropManager
 

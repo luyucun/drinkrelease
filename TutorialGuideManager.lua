@@ -320,4 +320,37 @@ function TutorialGuideManager:hidePortalArrow(player)
 	return true
 end
 
+-- ============================================
+-- 🔧 V2.0新增：显示提示消息
+-- ============================================
+
+function TutorialGuideManager:showMessage(player, message)
+	if not player or not player:IsA("Player") then
+		warn("[TutorialGuideManager] 无效的玩家对象")
+		return false
+	end
+
+	if not message or type(message) ~= "string" then
+		warn("[TutorialGuideManager] 无效的消息内容")
+		return false
+	end
+
+	-- 通过RemoteEvent发送消息给客户端显示
+	-- 假设已有一个RemoteEvent用于GUI通信
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local showMessageEvent = ReplicatedStorage:FindFirstChild("ShowTutorialMessageRemote")
+
+	if showMessageEvent then
+		-- 如果RemoteEvent存在，使用它
+		pcall(function()
+			showMessageEvent:FireClient(player, message)
+		end)
+	else
+		-- 降级处理：在服务器console输出
+		print("[TutorialGuideManager] 向玩家 " .. player.Name .. " 显示消息: " .. message)
+	end
+
+	return true
+end
+
 return TutorialGuideManager

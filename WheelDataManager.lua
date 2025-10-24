@@ -210,7 +210,8 @@ end
 
 -- V1.7: 从邀请奖励增加转盘次数
 function WheelDataManager.addSpinsFromInviteReward(player, count)
-	if not player or count <= 0 then
+	if not player or type(count) ~= "number" or count <= 0 then
+		warn("[WheelDataManager] 无效参数: player=" .. tostring(player) .. ", count=" .. tostring(count))
 		return false
 	end
 
@@ -285,8 +286,8 @@ function WheelDataManager.startFreeSpinTimer(player)
 			local elapsed = currentTime - lastFreeTime
 
 			-- 🎁 新功能：判断使用哪个免费间隔
-			-- 如果玩家从未获得过首次免费转盘，使用首次间隔（3分钟）
-			-- 否则使用正常间隔（5分钟）
+			-- 如果玩家从未获得过首次免费转盘，使用首次间隔（5分钟）
+			-- 否则使用正常间隔（10分钟）
 			local freeSpinInterval
 			if isFirstFreeSpin then
 				freeSpinInterval = WheelConfig.SETTINGS.FIRST_FREE_SPIN_INTERVAL
@@ -510,5 +511,86 @@ WheelDataManager.initialize()
 
 -- 导出到全局
 _G.WheelDataManager = WheelDataManager
+
+-- ============================================
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+-- ============================================
+
+function WheelDataManager.resetPlayerData(userId, player)
+	-- 1. 检查参数有效性
+	if not userId or type(userId) ~= "number" then
+		warn("[WheelDataManager] resetPlayerData: 无效的 userId: " .. tostring(userId))
+		return false
+	end
+
+	if not player or not player.UserId or player.UserId ~= userId then
+		warn("[WheelDataManager] resetPlayerData: player 参数与 userId 不匹配")
+		return false
+	end
+
+	print("[WheelDataManager] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
+
+	-- 2. 清空内存缓存（如果玩家在线）
+	if playerWheelData[player] then
+		-- 停止免费转盘计时器
+		WheelDataManager.stopFreeSpinTimer(player)
+		playerWheelData[player] = nil
+		print("[WheelDataManager] ✓ 已清空内存缓存和计时器")
+	end
+
+	-- 清空免费转盘计时器标志
+	if freeSpinTimers[player] then
+		freeSpinTimers[player] = nil
+		print("[WheelDataManager] ✓ 已清空计时器标志")
+	end
+
+	-- 3. 重置 DataStore 为默认值（带重试机制）
+	local defaultData = {}
+	for key, value in pairs(DEFAULT_WHEEL_DATA) do
+		defaultData[key] = value
+	end
+	-- 确保重置为新玩家状态：hasReceivedFirstFreeSpin=false
+	defaultData.hasReceivedFirstFreeSpin = false
+
+	local maxRetries = 3
+	local resetSuccess = false
+
+	-- 仅在非Studio环境下操作DataStore
+	if not isStudio and wheelDataStore then
+		for attempt = 1, maxRetries do
+			local success, err = pcall(function()
+				wheelDataStore:SetAsync("Player_" .. userId, defaultData)
+			end)
+
+			if success then
+				resetSuccess = true
+				print("[WheelDataManager] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
+				break
+			else
+				warn("[WheelDataManager] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
+				if attempt < maxRetries then
+					wait(1) -- 重试前等待1秒
+				end
+			end
+		end
+
+		if not resetSuccess then
+			warn("[WheelDataManager] ❌ DataStore 重置最终失败，达到最大重试次数")
+			return false
+		end
+	else
+		resetSuccess = true
+		print("[WheelDataManager] ✓ Studio环境或DataStore不可用，跳过DataStore重置")
+	end
+
+	-- 4. 如果玩家在线，重新初始化数据
+	if player and player.Parent then
+		WheelDataManager.initializePlayerData(player)
+		print("[WheelDataManager] ✓ 已重新初始化玩家数据")
+	end
+
+	print("[WheelDataManager] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
+end
 
 return WheelDataManager

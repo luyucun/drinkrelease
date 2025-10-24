@@ -192,25 +192,33 @@ function PortalTransportManager:teleportToMainPlace(player)
 		end
 	end
 
+	-- 🔧 V2.0 CRITICAL: 确保内存标记已设置
+	-- （注意：此时NewPlayerEntry已调用PlayerDataService:setTutorialCompleted，
+	--  但我们在这里再次确认内存标记，防止任何竞态条件）
+	if _G.TutorialCompleted then
+		_G.TutorialCompleted[player.UserId] = true
+	end
+
 	-- 尝试传送玩家
 	local success = false
 	local errorMsg = nil
 
-	local teleportAttempt = pcall(function()
-		TeleportService:Teleport(mainPlaceId, player)
+	-- 在 Studio 中不进行传送，避免警告
+	local isStudio = RunService:IsStudio()
+	if isStudio then
+		print("[PortalTransportManager] Studio环境：跳过传送")
 		success = true
-	end)
+	else
+		local teleportAttempt = pcall(function()
+			TeleportService:Teleport(mainPlaceId, player)
+			success = true
+		end)
 
-	if not teleportAttempt then
-		errorMsg = "TeleportService异常"
-	elseif not success then
-		errorMsg = "传送未成功"
-	end
-
-	-- 即使传送失败，也标记玩家为已完成教程
-	-- 这是容错处理
-	if _G.TutorialCompleted then
-		_G.TutorialCompleted[player.UserId] = true
+		if not teleportAttempt then
+			errorMsg = "TeleportService异常"
+		elseif not success then
+			errorMsg = "传送未成功"
+		end
 	end
 
 	return success, errorMsg

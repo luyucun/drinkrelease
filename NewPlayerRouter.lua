@@ -15,6 +15,10 @@ end
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
+local RunService = game:GetService("RunService")
+
+-- 检查是否在Studio环境
+local isStudio = RunService:IsStudio()
 
 -- 引入服务
 local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"))
@@ -52,6 +56,12 @@ local function onPlayerAdded(player)
 	-- 如果是新玩家，传送到Newplayer场景
 	if isNewPlayer then
 		print("[NewPlayerRouter] 传送新玩家 " .. player.Name .. " 到Newplayer场景")
+
+		-- 在 Studio 中不进行传送，避免警告
+		if isStudio then
+			print("[NewPlayerRouter] Studio环境：跳过传送，直接在主场景体验")
+			return
+		end
 
 		local success, err = pcall(function()
 			TeleportService:Teleport(NEWPLAYER_PLACE_ID, player)

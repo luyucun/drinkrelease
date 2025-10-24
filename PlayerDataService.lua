@@ -129,4 +129,78 @@ function PlayerDataService:cleanupPlayerCache(player)
 	print("[PlayerDataService] ✓ 已清理玩家缓存: " .. player.Name)
 end
 
+-- ============================================
+-- V1.9: 重置玩家数据为新玩家（管理员命令用）
+-- ============================================
+
+function PlayerDataService:resetPlayerData(userId, player)
+	-- 1. 检查参数有效性
+	if not userId or type(userId) ~= "number" then
+		warn("[PlayerDataService] resetPlayerData: 无效的 userId: " .. tostring(userId))
+		return false
+	end
+
+	if not player or not player.UserId or player.UserId ~= userId then
+		warn("[PlayerDataService] resetPlayerData: player 参数与 userId 不匹配")
+		return false
+	end
+
+	print("[PlayerDataService] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
+
+	-- 2. 清空内存缓存（如果玩家在线）
+	if playerDataCache[userId] then
+		playerDataCache[userId] = nil
+		print("[PlayerDataService] ✓ 已清空内存缓存")
+	end
+
+	-- 清空操作锁
+	if operationLocks[userId] then
+		operationLocks[userId] = nil
+		print("[PlayerDataService] ✓ 已清空操作锁")
+	end
+
+	-- 3. 重置 DataStore 为默认值（带重试机制）
+	local defaultData = {
+		newPlayerCompleted = false
+	}
+
+	local maxRetries = 3
+	local resetSuccess = false
+
+	for attempt = 1, maxRetries do
+		local success, err = pcall(function()
+			playerDataStore:SetAsync(tostring(userId), defaultData)
+		end)
+
+		if success then
+			resetSuccess = true
+			print("[PlayerDataService] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
+			break
+		else
+			warn("[PlayerDataService] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
+			if attempt < maxRetries then
+				wait(1) -- 重试前等待1秒
+			end
+		end
+	end
+
+	if not resetSuccess then
+		warn("[PlayerDataService] ❌ DataStore 重置最终失败，达到最大重试次数")
+		return false
+	end
+
+	-- 4. 如果玩家在线，重新加载数据
+	if player and player.Parent then
+		local newData = self:loadPlayerData(player)
+		if newData then
+			print("[PlayerDataService] ✓ 已重新加载玩家数据")
+		else
+			warn("[PlayerDataService] ⚠️ 重新加载玩家数据失败")
+		end
+	end
+
+	print("[PlayerDataService] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
+end
+
 return PlayerDataService
