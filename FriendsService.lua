@@ -7,6 +7,10 @@ local FriendsService = {}
 FriendsService.__index = FriendsService
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+-- 检查环境
+local isStudio = RunService:IsStudio()
 
 -- 好友列表缓存
 local friendsCache = {}
@@ -30,18 +34,48 @@ function FriendsService:getFriendsListCached(player)
 		return cache.friendIds
 	end
 
-	-- 从Roblox API获取好友列表
+	-- 🔧 V2.8修复：使用 Players:GetFriendsAsync（官方推荐API）
 	local friendIds = {}
-	local success, result = pcall(function()
-		local friendsList = game:GetService("FriendsService"):GetFriendsList(player)
-		for _, friend in ipairs(friendsList) do
-			table.insert(friendIds, friend.Id)
-		end
-		return friendIds
+	local success, pages = pcall(function()
+		-- Players:GetFriendsAsync 返回分页对象 FriendPages，不是直接的 table
+		return Players:GetFriendsAsync(playerId)
 	end)
 
-	if not success then
-		warn("[FriendsService] 获取好友列表失败: " .. player.Name)
+	if success and pages then
+		-- 🔧 V2.9修复：正确处理 FriendPages 分页
+		repeat
+			local currentPage = pages:GetCurrentPage()
+			for _, friend in ipairs(currentPage) do
+				-- GetFriendsAsync 返回的格式：{Id=..., Username=..., DisplayName=...}
+				table.insert(friendIds, friend.Id)
+			end
+
+			-- 检查是否有下一页
+			if pages.IsFinished then
+				break
+			end
+
+			-- 移到下一页
+			local pageSuccess, pageErr = pcall(function()
+				pages:AdvanceToNextPageAsync()
+			end)
+
+			if not pageSuccess then
+				warn("[FriendsService] 分页失败: " .. tostring(pageErr))
+				break
+			end
+		until false
+	else
+		-- 🔧 V2.8改进：更详细的错误处理和降级方案
+		if isStudio then
+			-- Studio 模式：打印提示但不报错
+			print("[FriendsService] ⚠️ Studio 模式：好友接口不可用，建议在设置中启用 API Services")
+			print("[FriendsService]   或在正式服务器上测试。使用默认好友列表。")
+		else
+			-- 正式服务器：记录警告但继续
+			warn("[FriendsService] ❌ 获取好友列表失败: " .. player.Name)
+		end
+
 		-- 返回空列表，降级处理（无加成）
 		return {}
 	end
@@ -180,12 +214,31 @@ function FriendsService:getRoomFriendsBonus(player, tableId)
 		return 0
 	end
 
-	-- 从缓存获取加成
-	if not roomFriendsCache[tableId] then
-		return 0
+	-- 🔧 关键修复：实时获取当前桌子的玩家列表，不依赖缓存
+	local currentPlayers = {}
+	if _G.TableManager then
+		local gameInstance = _G.TableManager.getTableInstance(tableId)
+		if gameInstance then
+			if gameInstance.gameState.player1 then
+				table.insert(currentPlayers, gameInstance.gameState.player1)
+			end
+			if gameInstance.gameState.player2 then
+				table.insert(currentPlayers, gameInstance.gameState.player2)
+			end
+		end
 	end
 
-	return roomFriendsCache[tableId][player.UserId] and roomFriendsCache[tableId][player.UserId].bonus or 0
+	-- 实时计算房间内的好友数
+	local roomFriends = self:getFriendsInRoom(player, currentPlayers)
+	local friendCount = #roomFriends
+
+	-- 计算加成倍数：每个好友+20%
+	local bonus = friendCount * 0.2
+
+	print("[FriendsService] 实时计算好友加成 - 玩家: " .. player.Name ..
+		  ", 房间好友数: " .. friendCount .. ", 加成: " .. (bonus * 100) .. "%")
+
+	return bonus
 end
 
 -- ============================================
@@ -232,7 +285,16 @@ function FriendsService.initialize()
 		FriendsService:clearPlayerCache(player)
 	end)
 
-	print("[FriendsService] 初始化完成")
+	-- 🔧 V2.8新增：在 Studio 模式下，给出明确的设置提示
+	if isStudio then
+		print("[FriendsService] ℹ️ 检测到 Studio 环境")
+		print("[FriendsService] 要在 Studio 中测试好友功能，请：")
+		print("[FriendsService] 1. 前往 Game Settings > Security > Enable API Services")
+		print("[FriendsService] 2. 勾选 'Allow HTTP Requests'")
+		print("[FriendsService] 3. 或者直接在正式服务器上测试")
+	end
+
+	print("[FriendsService] ✓ 初始化完成 (使用 Players:GetFriendsAsync API)")
 end
 
 -- 全局导出

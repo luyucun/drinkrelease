@@ -2,6 +2,11 @@
 -- 脚本作用: 管理玩家金币系统，包括数据存储、UI更新和奖励发放
 -- 脚本类型: Script
 -- 放置位置: ServerScriptService
+--
+-- 修改记录:
+--   [优化1] 已移除好友在同一服务器时的金币加成功能，所有玩家获得固定基础金币奖励
+--   [优化2] 安全饮用奖励改为0金币（CONFIG.SAFE_DRINK_REWARD = 0）
+--   [优化3] 移除GameInstance中的无用好友缓存计算，提升性能
 
 local CoinManager = {}
 local Players = game:GetService("Players")
@@ -45,7 +50,7 @@ local saveQueueProcessing = false
 -- 默认配置
 local CONFIG = {
 	DEFAULT_COINS = 0,        -- 新玩家默认金币
-	SAFE_DRINK_REWARD = 5,     -- 安全饮用奖励
+	SAFE_DRINK_REWARD = 0,     -- 安全饮用奖励（已禁用：改为0金币）
 	DATA_SAVE_INTERVAL = 30     -- 数据保存间隔（秒）
 }
 
@@ -347,27 +352,32 @@ function CoinManager.updatePlayerCoinUI(player)
 	end)
 end
 
--- V1.7: 发放金币奖励（带好友加成）
+-- V1.7: 发放金币奖励（已移除好友加成功能）
 function CoinManager.giveCoinsReward(player, baseCoins, tableId, reason)
-	if not player or not baseCoins or baseCoins <= 0 then return false end
-
-	local finalCoins = baseCoins
-
-	-- 应用好友加成
-	if _G.FriendsService and tableId then
-		local bonus = _G.FriendsService:getRoomFriendsBonus(player, tableId)
-		finalCoins = math.floor(baseCoins * (1 + bonus))
-		if bonus > 0 then
-			print("[CoinManager] 玩家 " .. player.Name .. " 获得好友加成: " .. (bonus * 100) .. "%, " .. baseCoins .. " -> " .. finalCoins)
-		end
+	if not player or not baseCoins or baseCoins <= 0 then
+		print("[CoinManager] giveCoinsReward 参数检查失败: player=" .. tostring(player) .. ", baseCoins=" .. tostring(baseCoins))
+		return false
 	end
 
-	return CoinManager.addCoins(player, finalCoins, reason or "游戏奖励")
+	print("[CoinManager] giveCoinsReward 开始 - 玩家: " .. player.Name .. ", 金币: " .. baseCoins)
+
+	-- 🔧 修改：移除好友加成计算，直接使用基础金币值
+	local finalCoins = baseCoins
+
+	print("[CoinManager] 调用 addCoins，金币: " .. finalCoins)
+	local result = CoinManager.addCoins(player, finalCoins, reason or "游戏奖励")
+	print("[CoinManager] addCoins 结果: " .. tostring(result))
+	return result
 end
 
 -- 奖励安全饮用
-function CoinManager.rewardSafeDrinking(player)
-	if not player then return false end
+function CoinManager.rewardSafeDrinking(player, tableId)
+	if not player then
+		print("[CoinManager] rewardSafeDrinking 失败: player 为空")
+		return false
+	end
+
+	print("[CoinManager] rewardSafeDrinking 开始 - 玩家: " .. player.Name .. ", tableId: " .. tostring(tableId))
 
 	-- 🔧 V1.6: 教程模式中不发放金币
 	if _G.TutorialMode then
@@ -375,7 +385,15 @@ function CoinManager.rewardSafeDrinking(player)
 		return true  -- 返回true表示处理成功，但不发放金币
 	end
 
-	return CoinManager.addCoins(player, CONFIG.SAFE_DRINK_REWARD, "安全饮用奶茶")
+	-- 🔧 修改：安全饮用奖励已改为0金币，直接返回不发放
+	if CONFIG.SAFE_DRINK_REWARD <= 0 then
+		print("[CoinManager] 安全饮用奖励已禁用（0金币），跳过发放")
+		return true  -- 返回true表示处理成功，但不发放金币
+	end
+
+	print("[CoinManager] 调用 giveCoinsReward - 金币: " .. CONFIG.SAFE_DRINK_REWARD)
+	-- 🔧 修改：已移除好友加成功能
+	return CoinManager.giveCoinsReward(player, CONFIG.SAFE_DRINK_REWARD, tableId, "安全饮用奶茶")
 end
 
 -- 玩家加入游戏处理

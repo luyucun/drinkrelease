@@ -113,9 +113,10 @@ local function initializeFriendAddDisplay()
 				redPoint.Visible = data.hasUnclaimedRewards or false
 			end
 
-			-- V1.8: 新增：更新好友加成显示（按策划稿显示百分比）
-			if data.friendCount and data.friendCount > 0 then
-				InviteMenuController.updateFriendBonus(data.friendCount * 0.2)
+			-- 🔧 V2.10修复：直接使用服务器发送的 friendBonus，不要客户端再算一遍
+			-- 这样可以确保服务器和客户端的好友加成完全一致
+			if data.friendBonus and data.friendBonus > 0 then
+				InviteMenuController.updateFriendBonus(data.friendBonus)
 			else
 				InviteMenuController.updateFriendBonus(0)
 			end

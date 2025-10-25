@@ -895,13 +895,14 @@ function GameInstance:startPoisonPhase()
 	self:sendCameraControl(self.gameState.player1, "enterPoison")
 	self:sendCameraControl(self.gameState.player2, "enterPoison")
 
-	-- V1.7: 更新房间好友信息
-	if _G.FriendsService and not _G.TutorialMode then
-		local players = {}
-		if self.gameState.player1 then table.insert(players, self.gameState.player1) end
-		if self.gameState.player2 then table.insert(players, self.gameState.player2) end
-		_G.FriendsService:updateRoomFriends(self.tableId, players)
-	end
+	-- 🔧 性能优化：已禁用好友缓存计算
+	-- V1.7: 更新房间好友信息（已废弃：金币加成功能已移除，不再需要缓存好友关系）
+	-- if _G.FriendsService and not _G.TutorialMode then
+	-- 	local players = {}
+	-- 	if self.gameState.player1 then table.insert(players, self.gameState.player1) end
+	-- 	if self.gameState.player2 then table.insert(players, self.gameState.player2) end
+	-- 	_G.FriendsService:updateRoomFriends(self.tableId, players)
+	-- end
 
 	-- 安全地加载并调用PoisonSelectionManager
 	local poisonManager = loadPoisonSelectionManager()
@@ -1123,10 +1124,11 @@ function GameInstance:resetToWaiting()
 	-- 禁用AirWall，恢复自由通行
 	self:disableAirWalls()
 
-	-- V1.7: 清理房间好友缓存
-	if _G.FriendsService then
-		_G.FriendsService:clearRoomCache(self.tableId)
-	end
+	-- 🔧 性能优化：已禁用好友缓存清理
+	-- V1.7: 清理房间好友缓存（已废弃：金币加成功能已移除，无需清理缓存）
+	-- if _G.FriendsService then
+	-- 	_G.FriendsService:clearRoomCache(self.tableId)
+	-- end
 
 	-- V1.8: 新增：重置后广播好友加成信息到客户端
 	-- 这确保UI能及时更新最新的加成数据

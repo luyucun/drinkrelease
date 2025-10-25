@@ -119,6 +119,20 @@ local function createNewSelectionState()
 	}
 end
 
+-- 🔧 V2.6新增：设置镜头状态的辅助函数（统一处理教程模式镜头逻辑）
+local function setCameraForPlayer(gameInstance, player, data)
+	if not isRealPlayer(player) then return end
+
+	-- 根据游戏模式选择镜头类型
+	if gameInstance and gameInstance.isTutorial then
+		-- 教程模式：恢复自由视角
+		cameraControlEvent:FireClient(player, "restore")
+	else
+		-- 正常模式：设置桌面俯视状态
+		cameraControlEvent:FireClient(player, "enterPrepare", data)
+	end
+end
+
 -- 获取或创建桌子的选择状态
 local function getSelectionState(tableId)
 	if not tableId then
@@ -1494,21 +1508,21 @@ function DrinkSelectionManager.continueOrEndGame(player, drinkIndex, tableId)
 		return
 	end
 
-	-- 给饮用安全奶茶的玩家奖励金币
-	DrinkSelectionManager.rewardSafeDrinking(player)
+	-- 给饮用安全奶茶的玩家奖励金币（传递tableId以支持好友加成等功能）
+	DrinkSelectionManager.rewardSafeDrinking(player, tableId)
 
 	-- 立刻切换到下一个玩家(传递tableId)
 	DrinkSelectionManager.switchToNextPlayer(tableId)
 end
 
 -- 奖励安全饮用
-function DrinkSelectionManager.rewardSafeDrinking(player)
+function DrinkSelectionManager.rewardSafeDrinking(player, tableId)
 	if not player then return end
 
 	-- 检查CoinManager是否可用
 	if CoinManager and CoinManager.rewardSafeDrinking then
-		-- 使用CoinManager奖励金币
-		local success = CoinManager.rewardSafeDrinking(player)
+		-- 使用CoinManager奖励金币（传递tableId）
+		local success = CoinManager.rewardSafeDrinking(player, tableId)
 
 		if success then
 		else
@@ -1800,8 +1814,13 @@ function DrinkSelectionManager.endGame(loser, reason, additionalInfo, tableId)
 		-- 记录排行榜数据
 		DrinkSelectionManager.recordGameResultToRanking(winner, loser)
 
-		-- 🔑 立即设置赢家镜头到桌面俯视，避免镜头停留在失败者身后
-		DrinkSelectionManager.setWinnerPrepareCamera(winner)
+		-- 🔑 🔧 V2.6修复: 教程模式下恢复自由视角，正常模式设置桌面俯视
+		-- 这是修复镜头锁定问题的关键点1
+		local cameraData = {
+			tableId = tableId,
+			tablePosition = gameInstance.tablePart.Position
+		}
+		setCameraForPlayer(gameInstance, winner, cameraData)
 
 		-- 播放获胜者的胜利动作（所有人可见，禁用移动）
 		-- 🔑 等待镜头切换完成（CameraController tweenTime=1.1s）后再播放，视觉体验更流畅
@@ -2073,7 +2092,9 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 							tableId = tableId,
 							tablePosition = gameInstance.tablePart.Position
 						}
-						cameraControlEvent:FireClient(actualPlayer1, "enterPrepare", cameraData)
+						-- 🔧 V2.6修复: 教程模式下恢复自由视角，正常模式设置桌面俯视
+						-- 这是修复镜头锁定问题的关键点2-1
+						setCameraForPlayer(gameInstance, actualPlayer1, cameraData)
 
 						-- 确保Leave按钮启用（如果在座位上）
 						local humanoid1 = actualPlayer1.Character:FindFirstChildOfClass("Humanoid")
@@ -2094,7 +2115,9 @@ function DrinkSelectionManager.resetWinnerToWaitingState(player)
 								tableId = tableId,
 								tablePosition = gameInstance.tablePart.Position
 							}
-							cameraControlEvent:FireClient(actualPlayer2, "enterPrepare", cameraData)
+							-- 🔧 V2.6修复: 教程模式下恢复自由视角，正常模式设置桌面俯视
+							-- 这是修复镜头锁定问题的关键点2-2
+							setCameraForPlayer(gameInstance, actualPlayer2, cameraData)
 							gameInstance:enableLeaveButton(actualPlayer2)
 						else
 							-- player2不在座位上（失败者在SpawnLocation），恢复默认镜头

@@ -87,8 +87,71 @@ _G.InviteDebug = {
 			_G.InviteManager:savePlayerInviteData(player, defaultData)
 			print("✓ 已重置玩家 " .. playerName .. " 的邀请数据")
 		end
+	end,
+
+	-- 🔧 新增：清理所有玩家的当日邀请记录
+	clearAllDaily = function()
+		if _G.InviteManager then
+			print("[InviteDebug] 🔄 执行一键清理所有玩家当日邀请记录...")
+			local result = _G.InviteManager:clearAllDailyInviteRecords()
+			print("[InviteDebug] ✅ 清理完成，共清理 " .. tostring(result) .. " 个在线玩家的记录")
+		else
+			print("❌ InviteManager 未初始化")
+		end
+	end,
+
+	-- 🔧 新增：清理单个玩家的当日邀请记录（按 UserId）
+	clearDailyByUserId = function(userId)
+		if not userId then
+			print("❌ 用法: _G.InviteDebug.clearDailyByUserId(userId)")
+			return
+		end
+
+		if _G.InviteManager then
+			print("[InviteDebug] 🔄 清理 UserId=" .. tostring(userId) .. " 的当日邀请记录...")
+			local success = _G.InviteManager:clearDailyInviteRecordByUserId(userId)
+			if success then
+				print("[InviteDebug] ✅ 清理成功")
+			else
+				print("[InviteDebug] ❌ 清理失败")
+			end
+		else
+			print("❌ InviteManager 未初始化")
+		end
+	end,
+
+	-- 🔧 新增：清理单个玩家的当日邀请记录（按玩家名）
+	clearDailyByName = function(playerName)
+		if not playerName then
+			print("❌ 用法: _G.InviteDebug.clearDailyByName('玩家名')")
+			return
+		end
+
+		local player = Players:FindFirstChild(playerName)
+		if not player then
+			print("❌ 玩家不存在: " .. playerName)
+			return
+		end
+
+		if _G.InviteManager then
+			print("[InviteDebug] 🔄 清理玩家 " .. playerName .. " 的当日邀请记录...")
+			local success = _G.InviteManager:clearDailyInviteRecordByUserId(player.UserId)
+			if success then
+				print("[InviteDebug] ✅ 清理成功")
+			else
+				print("[InviteDebug] ❌ 清理失败")
+			end
+		else
+			print("❌ InviteManager 未初始化")
+		end
 	end
 }
 
 print("[InviteSystemEntry] ✓ 邀请系统初始化完成")
-print("[InviteSystemEntry] ✓ 调试命令: _G.InviteDebug.addInviteCount('玩家名', 数量)")
+print("[InviteSystemEntry] ✓ 调试命令:")
+print("[InviteSystemEntry]   - _G.InviteDebug.addInviteCount('玩家名', 数量)")
+print("[InviteSystemEntry]   - _G.InviteDebug.showStatus('玩家名')")
+print("[InviteSystemEntry]   - _G.InviteDebug.reset('玩家名')")
+print("[InviteSystemEntry]   - _G.InviteDebug.clearAllDaily()  -- 一键清理所有玩家当日记录")
+print("[InviteSystemEntry]   - _G.InviteDebug.clearDailyByUserId(userId)  -- 清理指定 UserId")
+print("[InviteSystemEntry]   - _G.InviteDebug.clearDailyByName('玩家名')  -- 清理指定玩家")
