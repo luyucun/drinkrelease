@@ -29,8 +29,9 @@ local rewardTemplate5 = nil
 
 -- UI状态
 local uiState = {
-	invitedCount = 0,
-	claimedRewards = {}
+	dailyInvitedCount = 0,  -- 🔧 修复：改用dailyInvitedCount
+	claimedRewards = {},
+	nextResetTime = 0       -- 🔧 新增：缓存服务器的下次重置时间
 }
 
 -- ============================================
@@ -70,32 +71,64 @@ local function getInviteUI()
 end
 
 -- ============================================
--- 倒计时显示
+-- 倒计时显示（客户端本地计算）
 -- ============================================
 
+local countdownRunning = false
+
 local function updateCountdown()
+	-- 🔧 修复：避免重复启动倒计时
+	if countdownRunning then return end
+	countdownRunning = true
+
 	spawn(function()
 		while inviteScreenGui and inviteScreenGui.Enabled do
-			-- 请求服务端时间
-			inviteEvent:FireServer("requestStatus", {})
-			task.wait(1)
+			if uiState.nextResetTime and uiState.nextResetTime > 0 then
+				-- 🔧 修复：客户端本地计算倒计时，不再频繁请求服务器
+				local remaining = uiState.nextResetTime - os.time()
+
+				if remaining > 0 then
+					local hours = math.floor(remaining / 3600)
+					local minutes = math.floor((remaining % 3600) / 60)
+					local seconds = remaining % 60
+
+					if countdownTime then
+						countdownTime.Text = string.format("Refresh in: %02d:%02d:%02d", hours, minutes, seconds)
+					end
+				else
+					if countdownTime then
+						countdownTime.Text = "Refresh in: 00:00:00"
+					end
+
+					-- 🔧 倒计时结束，请求服务器刷新状态
+					inviteEvent:FireServer("requestStatus", {})
+				end
+			end
+
+			task.wait(1)  -- 每秒更新一次UI
 		end
+
+		countdownRunning = false
 	end)
 end
 
 -- 监听状态响应
 inviteEvent.OnClientEvent:Connect(function(action, data)
 	if action == "statusResponse" then
-		uiState.invitedCount = data.invitedCount
+		-- 🔧 修复：更新为dailyInvitedCount
+		uiState.dailyInvitedCount = data.dailyInvitedCount or 0
 		uiState.claimedRewards = data.claimedRewards
 
 		-- 更新进度显示
 		InvitationUI.updateProgressDisplay()
 		InvitationUI.updateRedPoint()
 
-		-- 计算倒计时
+		-- 🔧 修复：缓存服务器的下次重置时间，用于客户端本地倒计时
 		if data.nextResetTime then
-			local remaining = data.nextResetTime - os.time()
+			uiState.nextResetTime = data.nextResetTime
+
+			-- 立即更新一次倒计时显示
+			local remaining = uiState.nextResetTime - os.time()
 			if remaining > 0 then
 				local hours = math.floor(remaining / 3600)
 				local minutes = math.floor((remaining % 3600) / 60)
@@ -147,7 +180,8 @@ function InvitationUI.updateRewardProgress(rewardFrame, rewardId, requiredCount)
 	local claimButton = rewardFrame:FindFirstChild("Claim")
 
 	if progressLabel then
-		progressLabel.Text = uiState.invitedCount .. "/" .. requiredCount
+		-- 🔧 修复：使用dailyInvitedCount而不是invitedCount
+		progressLabel.Text = uiState.dailyInvitedCount .. "/" .. requiredCount
 	end
 
 	if claimButton then
@@ -168,8 +202,8 @@ function InvitationUI.updateRewardProgress(rewardFrame, rewardId, requiredCount)
 		-- 设置点击事件（避免重复连接）
 		if not claimButton:FindFirstChild("_InviteConnected") then
 			claimButton.MouseButton1Click:Connect(function()
-				-- 再次检查是否可以领取（防止已领取后仍可点击）
-				local currentCanClaim = uiState.invitedCount >= requiredCount and not uiState.claimedRewards[rewardId]
+				-- 🔧 修复：使用dailyInvitedCount判断
+				local currentCanClaim = uiState.dailyInvitedCount >= requiredCount and not uiState.claimedRewards[rewardId]
 				if currentCanClaim then
 					inviteEvent:FireServer("claimReward", {rewardId = rewardId})
 				end
@@ -223,7 +257,8 @@ function InvitationUI.updateRedPoint()
 			elseif rewardId == "reward_5" then requiredCount = 5
 			end
 
-			if uiState.invitedCount >= requiredCount then
+			-- 🔧 修复：使用dailyInvitedCount而不是invitedCount
+			if uiState.dailyInvitedCount >= requiredCount then
 				hasUnclaimedRewards = true
 				break
 			end
@@ -267,12 +302,18 @@ local function setupInviteButton()
 			-- 替换已过时的 GuiService:OpenInvitePrompt()（仅在主机端可用）
 			-- 新 API 支持 PC、手机、主机等所有平台
 			local socialService = game:GetService("SocialService")
+
 			local success, err = pcall(function()
 				socialService:PromptGameInvite(player)
 			end)
+
 			if not success then
 				warn("[InvitationUI] 打开邀请弹窗失败:", err)
 				InvitationUI.showNotification("邀请功能暂时不可用")
+			else
+				-- 🔧 V2.1 新增：通知服务器"我发出了邀请"
+				-- 服务器会记录这个待处理的邀请，5分钟内加入的玩家会被认定为邀请成功
+				inviteEvent:FireServer("inviteSent", {})
 			end
 		end)
 	end

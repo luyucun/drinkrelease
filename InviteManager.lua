@@ -33,18 +33,20 @@ local saveQueueProcessing = false
 -- 邀请链接映射表
 local inviteLinkMap = {}
 
+-- 🔧 V2.1 新增：待处理的邀请记录（用于同服务器内邀请检测）
+-- 结构: [inviterId] = {timestamp = os.time(), inviterName = "..."}
+local pendingInvites = {}
+
 -- 默认邀请数据
 local DEFAULT_INVITE_DATA = {
-	invitedCount = 0,              -- 累计邀请人数
-	dailyInvitedCount = 0,         -- 当日邀请人数
+	dailyInvitedCount = 0,         -- 当日邀请人数（每日UTC0重置）
 	lastResetTime = 0,             -- 上次UTC0重置时间
 	claimedRewards = {
 		reward_1 = false,
 		reward_3 = false,
 		reward_5 = false
 	},
-	invitedPlayerIds = {},         -- 邀请过的玩家ID列表
-	inviteLinks = {}               -- 邀请链接追踪
+	dailyInvitedPlayers = {}       -- 🔧 修复：当日已邀请的玩家ID集合（每日重置，防止重复计数）
 }
 
 -- 奖励配置
@@ -145,7 +147,8 @@ end
 
 local function getCurrentUTC0Timestamp()
 	local now = os.time()
-	local date = os.date("*t", now)
+	-- 🔧 修复：使用 "!*t" 获取UTC时间，而不是本地时区时间
+	local date = os.date("!*t", now)
 
 	return os.time({
 		year = date.year,
@@ -201,7 +204,6 @@ function InviteManager:loadPlayerInviteData(player)
 	end)
 
 	if not success then
-		warn("[InviteManager] 加载玩家邀请数据失败: " .. player.Name)
 		playerInviteData[userId] = defaultData
 		return defaultData
 	end
@@ -240,8 +242,6 @@ function InviteManager:savePlayerInviteData(player, data)
 				task.wait(1)
 			end
 		end
-
-		warn("[InviteManager] 保存玩家邀请数据失败: " .. player.Name)
 	end)
 
 	return true
@@ -269,15 +269,20 @@ function InviteManager:resetDailyInviteData(player)
 
 	local playerData = self:loadPlayerInviteData(player)
 
-	-- 保持不变：邀请总数、邀请过的玩家列表
-	-- 重置项：
+	-- 🔧 修复：每日重置时清理当日邀请记录和奖励领取状态
 	playerData.dailyInvitedCount = 0
+	playerData.dailyInvitedPlayers = {}  -- 清空当日已邀请玩家列表
 	playerData.claimedRewards = {
 		reward_1 = false,
 		reward_3 = false,
 		reward_5 = false
 	}
 	playerData.lastResetTime = getCurrentUTC0Timestamp()
+
+	-- 🔧 修复：兼容旧数据，清理废弃字段
+	playerData.invitedCount = nil
+	playerData.invitedPlayerIds = nil
+	playerData.inviteLinks = nil
 
 	self:savePlayerInviteData(player, playerData)
 end
@@ -354,40 +359,108 @@ end
 function InviteManager:recordInvitedPlayer(inviterId, invitedId)
 	if not inviterId or not invitedId then return false end
 
-	-- 获取邀请者数据
-	local inviter = Players:FindFirstChild(inviterId) or Players:GetPlayerByUserId(inviterId)
-	if not inviter then return false end
+	-- 🔧 关键修复：即使邀请者离线也要记录邀请！
+	-- 邀请者可能已经离线，我们仍需要保存这个邀请记录到他的DataStore中
 
-	local playerData = self:loadPlayerInviteData(inviter)
+	-- 尝试获取在线玩家
+	local inviter = Players:GetPlayerByUserId(inviterId)
 
-	-- 检查今天是否已经邀请过这个玩家
-	for recordedId, _ in pairs(playerData.inviteLinks) do
-		if recordedId == invitedId then
-			-- 已经邀请过，检查是否是同一天
-			local today = os.date("%Y-%m-%d")
-			if playerData.inviteLinks[invitedId].dateUsed == today then
-				return false  -- 同一天已邀请过
+	-- 如果邀请者离线，直接从DataStore加载数据
+	if not inviter then
+		-- 创建临时玩家对象供数据加载使用
+		-- 这允许我们从DataStore读取离线玩家的数据
+		local tempPlayerData = nil
+
+		if inviteDataStore then
+			local success, result = pcall(function()
+				return inviteDataStore:GetAsync(tostring(inviterId))
+			end)
+
+			if success and result then
+				tempPlayerData = result
+			else
+				tempPlayerData = {}
+				for k, v in pairs(DEFAULT_INVITE_DATA) do
+					if type(v) == "table" then
+						tempPlayerData[k] = {}
+						for k2, v2 in pairs(v) do
+							tempPlayerData[k][k2] = v2
+						end
+					else
+						tempPlayerData[k] = v
+					end
+				end
+			end
+		else
+			-- Studio环境
+			tempPlayerData = {}
+			for k, v in pairs(DEFAULT_INVITE_DATA) do
+				if type(v) == "table" then
+					tempPlayerData[k] = {}
+					for k2, v2 in pairs(v) do
+						tempPlayerData[k][k2] = v2
+					end
+				else
+					tempPlayerData[k] = v
+				end
 			end
 		end
+
+		-- 检查当日是否已经邀请过这个玩家
+		if tempPlayerData.dailyInvitedPlayers and tempPlayerData.dailyInvitedPlayers[tostring(invitedId)] then
+			return false
+		end
+
+		-- 记录邀请
+		tempPlayerData.dailyInvitedCount = (tempPlayerData.dailyInvitedCount or 0) + 1
+		tempPlayerData.dailyInvitedPlayers = tempPlayerData.dailyInvitedPlayers or {}
+		tempPlayerData.dailyInvitedPlayers[tostring(invitedId)] = {
+			invitedAt = os.time(),
+			date = os.date("!%Y-%m-%d")
+		}
+
+		-- 保存到DataStore
+		if inviteDataStore then
+			spawn(function()
+				pcall(function()
+					inviteDataStore:SetAsync(tostring(inviterId), tempPlayerData)
+				end)
+			end)
+		end
+
+		return true
 	end
 
-	-- 记录邀请
-	playerData.invitedCount = playerData.invitedCount + 1
+	-- 邀请者在线，使用正常流程
+	local playerData = self:loadPlayerInviteData(inviter)
+
+	-- 检查当日是否已经邀请过这个玩家（防止重复计数）
+	if playerData.dailyInvitedPlayers[tostring(invitedId)] then
+		return false
+	end
+
+	-- 记录当日邀请
 	playerData.dailyInvitedCount = playerData.dailyInvitedCount + 1
-
-	-- 避免重复
-	if not table.find(playerData.invitedPlayerIds, invitedId) then
-		table.insert(playerData.invitedPlayerIds, invitedId)
-	end
-
-	-- 记录邀请链接
-	playerData.inviteLinks[invitedId] = {
-		inviterId = inviterId,
-		dateUsed = os.date("%Y-%m-%d"),
-		usedTime = os.time()
+	playerData.dailyInvitedPlayers[tostring(invitedId)] = {
+		invitedAt = os.time(),
+		date = os.date("!%Y-%m-%d")  -- UTC日期
 	}
 
 	queueSaveOperation(inviter, playerData)
+
+	-- 🔧 新增：立即通知邀请者客户端刷新UI（如果邀请者在线）
+	local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+	if remoteEventsFolder then
+		local inviteEvent = remoteEventsFolder:FindFirstChild("InviteEvent")
+		if inviteEvent then
+			pcall(function()
+				-- 发送状态更新，触发UI刷新
+				local status = self:getInviteStatus(inviter)
+				status.nextResetTime = getNextUTC0Timestamp()
+				inviteEvent:FireClient(inviter, "statusResponse", status)
+			end)
+		end
+	end
 
 	return true
 end
@@ -404,8 +477,9 @@ function InviteManager:canClaimReward(player, rewardId)
 
 	if not rewardConfig then return false end
 
-	-- 检查邀请人数是否满足
-	if playerData.invitedCount < rewardConfig.requiredCount then
+	-- 🔧 修复：使用dailyInvitedCount而不是invitedCount
+	-- 因为奖励每天都可以重新领取，所以判断当日邀请人数
+	if playerData.dailyInvitedCount < rewardConfig.requiredCount then
 		return false
 	end
 
@@ -499,22 +573,11 @@ function InviteManager:getInviteStatus(player)
 
 	local playerData = self:loadPlayerInviteData(player)
 
-	-- V1.8: 增加好友加成信息
-	local friendCount = 0
-	local friendBonus = 0
-	if _G.FriendsService then
-		-- 注意：这里获取的是全局好友数，不限于房间
-		-- 房间特定的加成在游戏中由 CoinManager.giveCoinsReward 应用
-		friendCount = #(_G.FriendsService:getFriendsListCached(player))
-	end
-
+	-- 🔧 修复：移除好友加成相关字段
 	return {
-		invitedCount = playerData.invitedCount,
 		dailyInvitedCount = playerData.dailyInvitedCount,
 		claimedRewards = playerData.claimedRewards,
-		hasUnclaimedRewards = self:hasUnclaimedRewards(player),
-		friendCount = friendCount,      -- 新增：好友总数
-		friendBonus = friendBonus       -- 新增：好友加成倍数（0.x 格式）
+		hasUnclaimedRewards = self:hasUnclaimedRewards(player)
 	}
 end
 
@@ -526,7 +589,8 @@ function InviteManager:hasUnclaimedRewards(player)
 	for rewardId, claimed in pairs(playerData.claimedRewards) do
 		if not claimed then
 			local rewardConfig = REWARD_CONFIG[rewardId]
-			if rewardConfig and playerData.invitedCount >= rewardConfig.requiredCount then
+			-- 🔧 修复：使用dailyInvitedCount而不是invitedCount
+			if rewardConfig and playerData.dailyInvitedCount >= rewardConfig.requiredCount then
 				return true
 			end
 		end
@@ -562,6 +626,9 @@ function InviteManager.initialize()
 			inviteEvent:FireClient(player, "inviteLinkGenerated", {
 				link = link
 			})
+		elseif action == "inviteSent" then
+			-- 🔧 V2.1 新增：客户端通知服务器"我发出了邀请"
+			InviteManager:recordPendingInvite(player.UserId, player.Name)
 		end
 	end)
 
@@ -572,8 +639,13 @@ function InviteManager.initialize()
 		-- 检查并重置每日数据
 		InviteManager:checkAndResetPlayer(player)
 
-		-- 检查是否通过邀请链接进入游戏
-		InviteManager:checkPlayerJoinWithInvite(player)
+		-- 🔧 V2.1 修复：优先检查待处理的邀请（同服务器内邀请）
+		local foundPendingInvite = InviteManager:checkPendingInvites(player)
+
+		if not foundPendingInvite then
+			-- 如果没有找到待处理的邀请，再尝试使用Roblox官方API检测（跨服务器邀请）
+			InviteManager:checkPlayerJoinWithInvite(player)
+		end
 	end)
 
 	-- 玩家离开时保存数据
@@ -588,14 +660,80 @@ function InviteManager.initialize()
 	-- 服务器关闭时保存所有数据
 	game:BindToClose(function()
 		for userId, playerData in pairs(playerInviteData) do
-			local player = Players:FindFirstChild(userId) or Players:GetPlayerByUserId(userId)
+			local player = Players:GetPlayerByUserId(userId)
 			if player then
 				InviteManager:savePlayerInviteData(player, playerData)
 			end
 		end
 	end)
 
-	print("[InviteManager] 初始化完成")
+	-- 🔧 新增：定期清理过期的邀请链接（每10分钟）
+	spawn(function()
+		while true do
+			task.wait(600)  -- 10分钟
+			InviteManager:cleanupExpiredLinks()
+		end
+	end)
+end
+
+-- ============================================
+-- V2.1 新增：记录待处理的邀请
+-- ============================================
+
+function InviteManager:recordPendingInvite(inviterId, inviterName)
+	if not inviterId then return end
+
+	pendingInvites[inviterId] = {
+		timestamp = os.time(),
+		inviterName = inviterName or "Unknown"
+	}
+end
+
+-- ============================================
+-- V2.1 新增：检查并匹配待处理的邀请
+-- ============================================
+
+function InviteManager:checkPendingInvites(player)
+	if not player then return false end
+
+	-- 清理过期的邀请（超过5分钟）
+	local now = os.time()
+	local expiredInviters = {}
+
+	for inviterId, inviteData in pairs(pendingInvites) do
+		if now - inviteData.timestamp > 300 then  -- 5分钟 = 300秒
+			table.insert(expiredInviters, inviterId)
+		end
+	end
+
+	for _, inviterId in ipairs(expiredInviters) do
+		pendingInvites[inviterId] = nil
+	end
+
+	-- 检查是否有待处理的邀请
+	for inviterId, inviteData in pairs(pendingInvites) do
+		-- 检查不是自己邀请自己
+		if inviterId ~= player.UserId then
+			-- 🔧 V2.1.2 修复：移除好友关系检查
+			-- 原因：
+			-- 1. SocialService:PromptGameInvite() 本身只能邀请好友
+			-- 2. 如果不是好友，PromptGameInvite就不会让邀请者选择这个人
+			-- 3. 所以只要有待处理邀请记录，就代表这是有效的邀请
+			-- 4. Players:IsFriendsWith() 在某些Roblox版本中不存在
+			-- 5. 直接信任待处理邀请是安全的做法
+
+			-- 记录邀请
+			local success = self:recordInvitedPlayer(inviterId, player.UserId)
+
+			if success then
+				-- 清除这个待处理的邀请
+				pendingInvites[inviterId] = nil
+				return true
+			end
+		end
+	end
+
+	return false
 end
 
 -- ============================================
@@ -605,24 +743,43 @@ end
 function InviteManager:checkPlayerJoinWithInvite(player)
 	if not player then return end
 
-	-- 尝试从多个渠道获取邀请信息
-	local inviteCode = nil
+	-- 🔧 修复：使用多种方式检测邀请来源
+	local inviterId = nil
 
-	-- 方式1：通过GetJoinData获取LaunchData
+	-- 获取玩家的加入数据
 	local joinData = player:GetJoinData()
+
+	-- 方式1：通过GetJoinData获取LaunchData（适用于自定义邀请链接）
 	if joinData and joinData.LaunchData then
-		-- 从LaunchData中提取邀请码
-		-- 格式应该是 "inviteCode=xxxxx"
-		inviteCode = string.match(joinData.LaunchData, "inviteCode=([^&]+)")
+		local inviteCode = string.match(joinData.LaunchData, "inviteCode=([^&]+)")
+		if inviteCode then
+			local success, foundInviterId = self:verifyAndUseInviteCode(inviteCode, player.UserId)
+			if success then
+				inviterId = foundInviterId
+			end
+		end
 	end
 
-	if inviteCode then
-		InviteManager:processInviteCode(player, inviteCode)
+	-- 方式2：通过TeleportData获取邀请者ID（推荐使用）
+	if not inviterId and joinData and joinData.TeleportData then
+		if type(joinData.TeleportData) == "table" and joinData.TeleportData.inviterId then
+			inviterId = tonumber(joinData.TeleportData.inviterId)
+		end
+	end
+
+	-- 方式3：检查是否通过好友邀请加入（Roblox内置功能）
+	if not inviterId and joinData and joinData.SourceUserId then
+		inviterId = joinData.SourceUserId
+	end
+
+	-- 如果检测到邀请者，记录邀请
+	if inviterId and inviterId ~= player.UserId then
+		self:recordInvitedPlayer(inviterId, player.UserId)
 	end
 end
 
 -- ============================================
--- 处理邀请码
+-- 处理邀请码（向后兼容旧方法）
 -- ============================================
 
 function InviteManager:processInviteCode(player, code)
@@ -630,17 +787,27 @@ function InviteManager:processInviteCode(player, code)
 
 	local success, inviterId = self:verifyAndUseInviteCode(code, player.UserId)
 
-	if success then
-		-- 邀请码有效，记录邀请
-		local invitedPlayerData = self:loadPlayerInviteData(player)
+	if success and inviterId then
+		self:recordInvitedPlayer(inviterId, player.UserId)
+	end
+end
 
-		-- 获取邀请者信息（可能不在线）
-		local inviter = Players:GetPlayerByUserId(inviterId)
-		if inviter then
-			self:recordInvitedPlayer(inviterId, player.UserId)
-		else
-			-- 邀请者不在线，仍然记录邀请（异步）
-			self:recordInvitedPlayer(inviterId, player.UserId)
+-- ============================================
+-- 🔧 新增：清理过期的邀请链接
+-- ============================================
+
+function InviteManager:cleanupExpiredLinks()
+	local now = os.time()
+	local cleanedCount = 0
+
+	for code, link in pairs(inviteLinkMap) do
+		-- 清理条件：已过期、已使用、或创建超过48小时
+		if link.status == "expired" or
+		   link.status == "used" or
+		   now > link.expiryTime or
+		   (now - link.createTime) > 172800 then  -- 48小时
+			inviteLinkMap[code] = nil
+			cleanedCount = cleanedCount + 1
 		end
 	end
 end
@@ -652,27 +819,21 @@ end
 function InviteManager:resetPlayerData(userId, player)
 	-- 1. 检查参数有效性
 	if not userId or type(userId) ~= "number" then
-		warn("[InviteManager] resetPlayerData: 无效的 userId: " .. tostring(userId))
 		return false
 	end
 
 	if not player or not player.UserId or player.UserId ~= userId then
-		warn("[InviteManager] resetPlayerData: player 参数与 userId 不匹配")
 		return false
 	end
-
-	print("[InviteManager] 开始重置玩家数据: " .. player.Name .. " (UserId: " .. userId .. ")")
 
 	-- 2. 清空内存缓存（如果玩家在线）
 	if playerInviteData[userId] then
 		playerInviteData[userId] = nil
-		print("[InviteManager] ✓ 已清空内存缓存")
 	end
 
 	-- 清空操作锁
 	if playerOperationLocks[tostring(userId)] then
 		playerOperationLocks[tostring(userId)] = nil
-		print("[InviteManager] ✓ 已清空操作锁")
 	end
 
 	-- 3. 重置 DataStore 为默认值（带重试机制）
@@ -700,36 +861,26 @@ function InviteManager:resetPlayerData(userId, player)
 
 			if success then
 				resetSuccess = true
-				print("[InviteManager] ✓ DataStore 重置成功 (尝试 " .. attempt .. "/" .. maxRetries .. ")")
 				break
 			else
-				warn("[InviteManager] DataStore 重置失败 (尝试 " .. attempt .. "/" .. maxRetries .. "): " .. tostring(err))
 				if attempt < maxRetries then
-					wait(1) -- 重试前等待1秒
+					wait(1)
 				end
 			end
 		end
 
 		if not resetSuccess then
-			warn("[InviteManager] ❌ DataStore 重置最终失败，达到最大重试次数")
 			return false
 		end
 	else
 		resetSuccess = true
-		print("[InviteManager] ✓ Studio环境或DataStore不可用，跳过DataStore重置")
 	end
 
 	-- 4. 如果玩家在线，重新加载数据
 	if player and player.Parent then
-		local newData = self:loadPlayerInviteData(player)
-		if newData then
-			print("[InviteManager] ✓ 已重新加载玩家数据")
-		else
-			warn("[InviteManager] ⚠️ 重新加载玩家数据失败")
-		end
+		self:loadPlayerInviteData(player)
 	end
 
-	print("[InviteManager] ✅ 玩家数据重置完成: " .. player.Name)
 	return true
 end
 

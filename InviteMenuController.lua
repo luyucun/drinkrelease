@@ -17,8 +17,9 @@ local inviteEvent = remoteEventsFolder:WaitForChild("InviteEvent")
 local menuGui = nil
 local imageButtonInvite = nil
 local redPoint = nil
-local friendAdd = nil
-local addNum = nil
+-- 🔧 修复：移除好友加成UI相关引用
+-- local friendAdd = nil
+-- local addNum = nil
 
 -- ============================================
 -- 获取菜单UI引用
@@ -77,66 +78,30 @@ end
 -- ============================================
 
 local function initializeFriendAddDisplay()
-	if not menuGui then return end
+	-- 🔧 修复：完全移除好友加成显示功能
+	-- 好友加成功能已被移除，不再需要UI显示
 
-	-- 创建或获取FriendAdd框架
-	friendAdd = menuGui:FindFirstChild("FriendAdd")
-	if not friendAdd then
-		friendAdd = Instance.new("Frame")
-		friendAdd.Name = "FriendAdd"
-		friendAdd.Size = UDim2.new(0, 80, 0, 30)
-		friendAdd.Position = UDim2.new(0, 10, 0, 10)
-		friendAdd.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-		friendAdd.BackgroundTransparency = 0.5
-		friendAdd.Parent = menuGui
-	end
-
-	-- 创建或获取AddNum标签
-	addNum = friendAdd:FindFirstChild("AddNum")
-	if not addNum then
-		addNum = Instance.new("TextLabel")
-		addNum.Name = "AddNum"
-		addNum.Size = UDim2.new(1, 0, 1, 0)
-		addNum.BackgroundTransparency = 1
-		addNum.TextColor3 = Color3.fromRGB(255, 200, 0)
-		addNum.TextScaled = true
-		addNum.Font = Enum.Font.GothamBold
-		addNum.Text = "+0%"
-		addNum.Parent = friendAdd
-	end
-
-	-- V1.8: 监听邀请事件更新红点和好友加成
+	-- V1.8: 监听邀请事件更新红点
 	inviteEvent.OnClientEvent:Connect(function(action, data)
 		if action == "statusResponse" then
 			-- 更新红点显示
 			if redPoint then
 				redPoint.Visible = data.hasUnclaimedRewards or false
 			end
-
-			-- 🔧 V2.10修复：直接使用服务器发送的 friendBonus，不要客户端再算一遍
-			-- 这样可以确保服务器和客户端的好友加成完全一致
-			if data.friendBonus and data.friendBonus > 0 then
-				InviteMenuController.updateFriendBonus(data.friendBonus)
-			else
-				InviteMenuController.updateFriendBonus(0)
-			end
 		end
 	end)
 
-	-- V1.8: 新增：初始化时请求一次邀请状态，获取好友加成
+	-- V1.8: 新增：初始化时请求一次邀请状态
 	inviteEvent:FireServer("requestStatus", {})
 end
 
 -- ============================================
--- 更新好友加成显示
+-- 更新好友加成显示（已废弃）
 -- ============================================
 
 function InviteMenuController.updateFriendBonus(bonus)
-	if addNum then
-		-- V1.8: 按策划稿显示百分比格式（例如 +0%, +20%, +40% 等）
-		local percentageBonus = math.floor(bonus * 100)
-		addNum.Text = string.format("+%d%%", percentageBonus)
-	end
+	-- 🔧 修复：好友加成功能已移除，此函数保留仅为向后兼容
+	-- 不再执行任何UI更新
 end
 
 -- ============================================
