@@ -1,4 +1,4 @@
-﻿V1.0
+V1.0
 皮肤系统新增需求：
 
 新增一种皮肤获取方式：直接投放
@@ -371,3 +371,58 @@ StarterGui - Invite - InvitBg - InviteButton是一个button，玩家点击按钮
 
 允许多个玩家同时邀请一个玩家，比如B邀请了A，C也邀请了A，A进入B的服务器，就算A的邀请成功，但是不算B的，主要判断依据是看实际是根据谁的邀请链接进来的
 是否保存重置时间可以你自己判断，总体需求就是每天只能最多领一轮邀请奖励，不论什么时候进来，重置倒计时就是所有服务器统一的系统utc0点
+
+
+补充：
+去除了好友同时在线的加成金币逻辑
+去除了喝奶茶获得金币的逻辑（数值改成了0）
+
+V1.8
+新增每日任务：
+
+在游戏内新增每日任务系统，任务在每天的UTC点重置进度，玩家完成每日任务可以领取奖励
+
+任务类型：
+1.完成X局对战
+
+奖励类型：
+1.发放金币
+2.发放转盘次数
+
+具体的客户端逻辑：
+
+1.玩家点击StarterGui - Menu - ImageButtonDaily这个按钮可以打开任务界面（把StarterGui - Task的Enable属性改成True）
+2.玩家点击StarterGui - Task - TaskBg - CloseButton，可以关闭任务界面（把StarterGui - Task的Enable属性改成False）
+
+当有可领取但是玩家未领取的每日任务奖励时，玩家的daily按钮上要有红点，具体逻辑是：将StarterGui - Menu - ImageButtonDaily - RedPoint是一个红点，常规状态下RedPoint的visible属性是false，但是当玩家有未领取的邀请奖励时，需要把RedPoint的visible属性改成true
+如果玩家奖励领取完后，要及时更新红点状态，将红点隐藏
+
+在我们的StarterGui - Task - TaskBg - ScrollingFrame - Template是我们的任务列表模板，任务生成时要根据任务表信息去复制模板，然后生成我们对应的任务列表
+其中Template - ClaimButton是领取按钮，任务未完成奖励无法领取时，按钮置灰，点击无法用（这里参考我们邀请功能界面的奖励领取按钮，无法领取时保持一样的表现逻辑）
+Template - ClaimButton在奖励可领取时，就变成常规的可领取状态，玩家点击领取后可以领取奖励，并且在右下角弹出领取成功的系统提示
+在玩家领取成功奖励后，需要把Template - ClaimButton的Visible属性改成False，同时把Template - Complete的Visible属性改成True
+Template - TaskDes是任务描述，去读取任务表中任务对应的任务描述即可
+Template - RewardBg是我们的任务奖励图标与信息，其中Template - RewardBg - Rewardicon是奖励图标，去读取我们的任务奖励图标icon，Template - RewardBg - RewardNum是奖励数量
+
+
+我们的任务表是：
+
+任务id	任务描述	任务奖励类型	任务奖励数量	奖励图标icon
+1	Complete 1 matches	1	200	rbxassetid://18209599044
+2	Complete 3 matches	1	300	rbxassetid://18209599044
+3	Complete 5 matches	2	2	rbxassetid://140226468670502
+
+任务表说明：
+1.任务id是唯一id
+2.任务描述是对应的显示出来的任务内容描述
+3.奖励类型中，1代表发放金币，2代表发放转盘可用次数
+4.任务奖励数量与任务奖励类型结合起来就可以得出本次奖励的发放类型与数量
+5.奖励图标icon是奖励的图标
+
+补充：
+1.只要参加了一局对局分出了胜负，不论输赢，就算完成一局，注意：新手场景与NPC的对战也算是完成了一局对局
+2.utc0点重置时直接刷新ui
+3.奖励发放失败按你的理解来执行但是你得告诉我你怎么执行的
+4.任务进度需要实时同步
+5.数据要使用datastore进行储存
+6.ui在加载时生成一次

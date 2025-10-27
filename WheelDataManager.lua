@@ -218,6 +218,16 @@ function WheelDataManager.addSpinsFromInviteReward(player, count)
 	return WheelDataManager.addSpinCount(player, count, "invite_reward")
 end
 
+-- V1.8: 从每日任务奖励增加转盘次数
+function WheelDataManager.addSpinsFromTaskReward(player, count)
+	if not player or type(count) ~= "number" or count <= 0 then
+		warn("[WheelDataManager] 无效参数: player=" .. tostring(player) .. ", count=" .. tostring(count))
+		return false
+	end
+
+	return WheelDataManager.addSpinCount(player, count, "task_reward")
+end
+
 -- 使用转盘次数
 function WheelDataManager.useSpinCount(player)
 	if not playerWheelData[player] then

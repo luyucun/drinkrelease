@@ -444,6 +444,13 @@ function RankingDataManager.recordGameResult(player, isWinner)
 	RankingDataManager.markGlobalRankingNeedUpdate()
 
 	print("🎉 游戏结果记录流程完成: " .. player.Name)
+
+	-- V1.8: 记录每日任务进度 (排除教程模式)
+	if _G.TaskDataManager and not _G.TutorialMode then
+		_G.TaskDataManager:incrementMatchCount(player)
+		print("📝 已统计玩家 " .. player.Name .. " 对局至每日任务")
+	end
+
 	return true
 end
 
