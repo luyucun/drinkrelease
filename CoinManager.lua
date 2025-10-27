@@ -293,6 +293,13 @@ function CoinManager.addCoins(player, amount, reason)
 			})
 		end)
 
+		-- V1.9: 通知SkinGuideManager金币变化
+		if _G.SkinGuideManager and _G.SkinGuideManager.onCoinChanged then
+			pcall(function()
+				_G.SkinGuideManager:onCoinChanged(player, newCoins)
+			end)
+		end
+
 		success = true
 	end)
 
@@ -328,6 +335,13 @@ function CoinManager.deductCoins(player, amount, reason)
 
 		-- 队列化保存数据
 		CoinManager.savePlayerData(player, newCoins)
+
+		-- V1.9: 通知SkinGuideManager金币变化
+		if _G.SkinGuideManager and _G.SkinGuideManager.onCoinChanged then
+			pcall(function()
+				_G.SkinGuideManager:onCoinChanged(player, newCoins)
+			end)
+		end
 
 		success = true
 	end)

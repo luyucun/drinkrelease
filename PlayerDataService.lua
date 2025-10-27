@@ -52,7 +52,8 @@ function PlayerDataService:loadPlayerData(player)
 	if not success then
 		warn("[PlayerDataService] 加载玩家数据失败: " .. player.Name .. ", 使用默认值")
 		playerDataCache[userId] = {
-			newPlayerCompleted = false
+			newPlayerCompleted = false,
+			skinGuideShown = false  -- V1.9: 皮肤引导是否已触发
 		}
 		return playerDataCache[userId]
 	end
@@ -60,10 +61,15 @@ function PlayerDataService:loadPlayerData(player)
 	-- 如果DataStore中没有数据，创建新的
 	if not data then
 		playerDataCache[userId] = {
-			newPlayerCompleted = false
+			newPlayerCompleted = false,
+			skinGuideShown = false  -- V1.9: 皮肤引导是否已触发
 		}
 	else
 		playerDataCache[userId] = data
+		-- 确保新字段存在（兼容旧数据）
+		if playerDataCache[userId].skinGuideShown == nil then
+			playerDataCache[userId].skinGuideShown = false
+		end
 	end
 
 	print("[PlayerDataService] ✓ 已加载玩家数据: " .. player.Name)
@@ -200,6 +206,53 @@ function PlayerDataService:resetPlayerData(userId, player)
 	end
 
 	print("[PlayerDataService] ✅ 玩家数据重置完成: " .. player.Name)
+	return true
+end
+
+-- ============================================
+-- V1.9: 检查是否已触发皮肤引导
+-- ============================================
+
+function PlayerDataService:hasSkinGuideShown(player)
+	if not player then return false end
+
+	local playerData = self:loadPlayerData(player)
+	if not playerData then return false end
+
+	return playerData.skinGuideShown == true
+end
+
+-- ============================================
+-- V1.9: 设置皮肤引导已触发状态
+-- ============================================
+
+function PlayerDataService:setSkinGuideShown(player, shown)
+	if not player then return false end
+
+	local userId = player.UserId
+
+	-- 更新缓存
+	if not playerDataCache[userId] then
+		playerDataCache[userId] = {}
+	end
+	playerDataCache[userId].skinGuideShown = shown
+
+	-- 异步保存到DataStore
+	spawn(function()
+		acquireLock(userId)
+
+		local success, err = pcall(function()
+			playerDataStore:SetAsync(tostring(userId), playerDataCache[userId])
+		end)
+
+		releaseLock(userId)
+
+		if success then
+		else
+			warn("[PlayerDataService] 保存皮肤引导状态失败: " .. player.Name .. ", 错误: " .. tostring(err))
+		end
+	end)
+
 	return true
 end
 

@@ -23,23 +23,22 @@ local isStudio = RunService:IsStudio()
 -- 引入服务
 local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"))
 
+-- V1.9: 将PlayerDataService注册到全局，供其他模块使用
+_G.PlayerDataService = PlayerDataService
+
 -- ============================================
 -- 玩家加入时的分流逻辑
 -- ============================================
 
 local function onPlayerAdded(player)
-	print("[NewPlayerRouter] 玩家加入: " .. player.Name)
-
 	-- 🔧 V1.6修复: 添加状态检查，防止重复处理
 	-- 检查内存中的状态，避免重复路由
 	if _G.TutorialCompleted and _G.TutorialCompleted[player.UserId] then
-		print("[NewPlayerRouter] 玩家 " .. player.Name .. " 已在内存中标记为完成教程，直接进入主场景")
 		return
 	end
 
 	-- 检查传送失败标记，避免无限循环
 	if _G.TutorialTransportFailed and _G.TutorialTransportFailed[player.UserId] then
-		print("[NewPlayerRouter] 玩家 " .. player.Name .. " 之前传送失败，跳过本次路由")
 		-- 清理失败标记，允许下次尝试
 		_G.TutorialTransportFailed[player.UserId] = nil
 		return
@@ -51,15 +50,10 @@ local function onPlayerAdded(player)
 	-- 检查是否是新玩家
 	local isNewPlayer = playerData.newPlayerCompleted == false
 
-	print("[NewPlayerRouter] 玩家 " .. player.Name .. " isNewPlayer = " .. tostring(isNewPlayer))
-
 	-- 如果是新玩家，传送到Newplayer场景
 	if isNewPlayer then
-		print("[NewPlayerRouter] 传送新玩家 " .. player.Name .. " 到Newplayer场景")
-
 		-- 在 Studio 中不进行传送，避免警告
 		if isStudio then
-			print("[NewPlayerRouter] Studio环境：跳过传送，直接在主场景体验")
 			return
 		end
 
@@ -83,14 +77,20 @@ local function onPlayerAdded(player)
 			-- PlayerDataService:setTutorialCompleted(player, true)  -- 移除这行
 		end
 	else
-		print("[NewPlayerRouter] 老玩家 " .. player.Name .. " 进入主场景")
-		-- 老玩家自动进入主场景（由游戏逻辑负责）
+		-- V1.9: 检查是否刚完成教程且需要皮肤引导
+		if playerData.newPlayerCompleted and not playerData.skinGuideShown then
+			-- 等待玩家角色加载后再触发引导
+			player.CharacterAdded:Wait()
+			task.delay(2, function()
+				if player and player.Parent and _G.SkinGuideManager then
+					_G.SkinGuideManager:initializePlayerGuide(player)
+				end
+			end)
+		end
 	end
 end
 
 local function onPlayerRemoving(player)
-	print("[NewPlayerRouter] 玩家离开: " .. player.Name)
-
 	-- 清理缓存
 	PlayerDataService:cleanupPlayerCache(player)
 end
@@ -103,5 +103,3 @@ Players.PlayerRemoving:Connect(onPlayerRemoving)
 for _, player in pairs(Players:GetPlayers()) do
 	task.spawn(onPlayerAdded, player)
 end
-
-print("[NewPlayerRouter] ✓ 新玩家路由系统已启动")
